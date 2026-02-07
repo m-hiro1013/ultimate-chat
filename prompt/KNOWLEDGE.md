@@ -1,20 +1,25 @@
-# Ultimate Chat - ナレッジベース
-# 🎀 セッションで得た知見を蓄積するよ！
-
-## セッションログ
-
-### 2026-02-07 セッション
+### 2026-02-08 セッション（Phase 2: 究極リサーチ対応）
 
 #### 学んだこと（+3 = 必須級, +2 = 推奨, +1 = 参考）
 
 | 知見 | ウェイト | カテゴリ |
 |------|---------|---------|
-| AI SDK v6では`handleSubmit`/`handleInputChange`は存在しない。`sendMessage({ text })`を使用 | +3 | AI SDK |
-| AI SDK v6では`DefaultChatTransport`でAPIエンドポイントを指定する | +3 | AI SDK |
-| Gemini 3 FlashのTemperatureは1.0固定（変更すると推論品質が低下） | +3 | Gemini |
-| Gemini 3 Flashの`thinkingLevel`は`providerOptions.google.thinkingConfig`で設定 | +3 | Gemini |
-| ReactMarkdownのchildrenは単純な`String()`では変換できない。再帰的にReactノードを処理する必要がある | +2 | React |
-| HTMLでは`<button>`の中に`<button>`をネストできない（hydrationエラー） | +2 | HTML |
+| `stopWhen` (AI SDK) で `stepCountIs` を使用すると多段ツール呼び出しを制御可能。リサーチには10ステップ程度が妥当 | +3 | AI SDK |
+| Gemini 3 Flashのビルトインツール（Search/URL）とカスタムFunction Callingの併用は現在制限がある | +3 | Gemini |
+| 背景タスク（要約・計画生成）は `thinkingLevel: 'low'` で十分かつコスト効率が高い | +2 | Cost |
+| AI SDK v6の `toUIMessageStreamResponse` で `sendSources: true` を設定するとGrounding Metadataが転送される | +2 | AI SDK |
+
+#### ハマったポイント
+
+1. **ビルトインツールとカスタムツールの不整合**
+   - 問題: Google Searchを有効にすると、自前のDeep Researchツールが呼ばれなくなる
+   - 原因: GeminiのビルトインツールとFunction Callingの併用制限によるもの
+   - 解決: リサーチ機能をビルトインの `google_search` + `url_context` + `stopWhen` ループに委ねることで、外部ツールなしで高性能なリサーチを実現した
+
+2. **FileUploadのバイナリ整合性**
+   - 問題: フロントエンドでファイルデータがAPIまで到達していなかった
+   - 解決: `sendMessage({ parts })` を使用し、各ファイルを `type: 'file'` パートとして明示的に送信するように修正
+
 
 #### ハマったポイント
 

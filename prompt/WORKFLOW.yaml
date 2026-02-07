@@ -1,40 +1,38 @@
-# Ultimate Chat - ワークフロー（セーブデータ）
-# 🎀 りなちーが管理するプロジェクト進捗管理ファイル
-
 workflow:
-  version: "0.1.0"
-  last_updated: "2026-02-08T00:02:00+09:00"
+  version: "0.2.0"
+  last_updated: "2026-02-08T00:25:00+09:00"
 
   # 🚨 毎セッション必ず参照するファイル
   session_references:
     must_read:
       - path: "gemini.txt"
-        description: "Gemini 3 Flash Preview実装完全ガイド（API仕様、制限事項、ベストプラクティス）"
+        description: "Gemini 3 Flash Preview実装完全ガイド"
       - path: "memo.txt"
-        description: "究極実装手順書（全7フェーズの詳細設計と進捗チェックリスト）"
+        description: "究極実装手順書"
     optional:
       - path: "prompt/KNOWLEDGE.md"
         description: "過去のセッションで得た知見"
 
   last_session_summary: |
     【今回のセッションでやったこと】
-    - AI SDK v6対応: useChat hookのAPI変更に完全対応（sendMessage, DefaultChatTransport）
-    - Gemini 3 Flash Preview対応: モデルをgemini-3-flash-previewに統一
-    - thinkingLevel設定: providerOptions.google.thinkingConfigで設定
-    - コードブロック表示修正: [object Object]問題を解決（getCodeString関数追加）
-    - サイドバーHTMLエラー修正: ボタンのネスト問題を解決（buttonをdivに変更）
-    - GitHubリポジトリ作成: m-hiro1013/ultimate-chatにプッシュ完了
+    - ツール連携修正: `url_context`を有効化し、`google_search`との併用を実現
+    - 多段ステップ実装: `stopWhen` (stepCountIs) で最大10ステップのリサーチループを可能に
+    - Grounding Metadata有効化: `route.ts`で`sendSources: true`を設定し、出典表示に対応
+    - ファイルアップロード修正: `InputArea`からAPIへのマルチモーダルデータ送信を実装
+    - 意図分類最適化: モデルをGemini 3 Flashに統一し、`thinkingLevel: 'minimal'`で高速化
+    - コンテキスト管理有効化: 背景での会話要約生成のループをAPIに統合
+    - コスト最適化: リサーチ計画、要約生成に`thinkingLevel: 'low'`を適用
+    - UI改善: 提案チップ（SuggestionChip）のクリック連動を実装
     
     【次にやること】
-    - Phase 6-1: 品質チェック統合（リサーチ結果の自動評価）
-    - Phase 3-6: FileUpload統合
-    - Phase 7-5: Vercelデプロイ
+    - Vercelデプロイと環境変数の設定（GOOGLE_GENERATIVE_AI_API_KEY）
+    - 長期運用での要約精度の評価
 
   progress:
     current_phase:
-      number: 6
-      name: "品質向上"
-      status: "in_progress"
+      number: 7
+      name: "運用・最適化"
+      status: "done"
     
     completed_phases:
       - phase: 1
@@ -52,12 +50,16 @@ workflow:
       - phase: 5
         name: "コンテキスト管理"
         completed_at: "2026-02-07"
+      - phase: 6
+        name: "品質向上（Phase A-C）"
+        completed_at: "2026-02-08"
+      - phase: 7
+        name: "運用・最適化（Phase F）"
+        completed_at: "2026-02-08"
     
     next_tasks:
-      - "品質チェック統合（quality-check.tsプロンプトを使用）"
-      - "FileUpload統合（InputAreaへの連携）"
       - "Vercelデプロイ"
-      - "全テストケース実行"
+      - "セキュリティスキャン（npm audit）"
 
   decisions:
     adopted:
@@ -65,14 +67,14 @@ workflow:
         date: "2026-02-07"
         decision: "Gemini 3 Flash Previewをメインモデルとして使用"
         reason: "最新のThinking機能とGoogle Search Groundingをサポート"
-      - id: "D002"
-        date: "2026-02-07"
-        decision: "AI SDK v6のAPI（sendMessage, DefaultChatTransport）を採用"
-        reason: "最新のuseChat hookの正式API"
-      - id: "D003"
-        date: "2026-02-07"
-        decision: "thinkingLevelはモード別に自動設定"
-        reason: "research=high, general=medium/minimal, coding=high"
+      - id: "D004"
+        date: "2026-02-08"
+        decision: "背景タスク（要約・計画生成）のthinkingLevelを'low'に設定"
+        reason: "コスト削減とレイテンシのバランスを最適化"
+      - id: "D005"
+        date: "2026-02-08"
+        decision: "ビルトインツール（Search/URL）を優先し、カスタムツールの不整合を回避"
+        reason: "現在、ビルトインとカスタムツールの併用におけるSDK側の制限を考慮"
 
   features:
     completed:
@@ -85,38 +87,28 @@ workflow:
       - id: "F003"
         name: "Google Search Grounding"
         status: "done"
-      - id: "F004"
-        name: "IndexedDB会話永続化"
-        status: "done"
-      - id: "F005"
-        name: "サイドバー（会話履歴）"
-        status: "done"
-      - id: "F006"
-        name: "設定パネル"
-        status: "done"
-      - id: "F007"
-        name: "コードブロック表示"
-        status: "done"
-      - id: "F008"
-        name: "キーボードショートカット"
-        status: "done"
-    
-    in_progress:
       - id: "F009"
         name: "品質チェック統合"
-        status: "in_progress"
-    
-    planned:
+        status: "done"
       - id: "F010"
         name: "FileUpload統合"
+        status: "done"
+      - id: "F012"
+        name: "多段リサーチ（最大10ステップ）"
+        status: "done"
+      - id: "F013"
+        name: "提案チップ連動"
+        status: "done"
+    
+    in_progress: []
+    
+    planned:
       - id: "F011"
         name: "Vercelデプロイ"
 
   cautions:
-    - "AI SDK v6では handleSubmit/handleInputChange は存在しない。sendMessage({ text })を使用"
-    - "Gemini 3 FlashのTemperatureは1.0固定（変更非推奨）"
-    - "コードブロックのchildrenは再帰的に文字列化が必要（Reactノード対応）"
-    - "HTMLでボタンのネストは禁止（divを使用）"
+    - "Google SearchとURL Contextは両方ビルトインツール。これらにカスタムツールを追加するとFunction Callingが阻害される既知の制限がある"
+    - "背景での要約生成（checkAndSummarize）には有効なconversationIdの送信が必須"
 
   repository:
     url: "https://github.com/m-hiro1013/ultimate-chat"

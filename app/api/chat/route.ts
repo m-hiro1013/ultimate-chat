@@ -55,6 +55,17 @@ export async function POST(req: Request) {
 
         console.log('[Chat API] Calling orchestrator...');
 
+        // データベースからコンテキストを取得 (conversationIdがある場合)
+        // 注意: route.ts では直接DBにアクセスせず、orchestratorに委ねるか、
+        // クライアントから渡された値を使用する。現状は body から渡されている。
+
+        // バックグラウンドで要約チェック（レスポンスをブロックしない）
+        // 型定義に conversationId が必要なので追加検討
+        // const { ..., conversationId } = body;
+        // if (conversationId) {
+        //     checkAndSummarize(conversationId, simpleMessages).catch(console.error);
+        // }
+
         // オーケストレーション層を呼び出し
         const result = await orchestrate({
             messages: simpleMessages,
@@ -72,7 +83,9 @@ export async function POST(req: Request) {
         });
 
         // AI SDK v6: toUIMessageStreamResponse() を使用
-        return result.stream.toUIMessageStreamResponse();
+        return result.stream.toUIMessageStreamResponse({
+            sendSources: true,
+        });
     } catch (error) {
         console.error('[Chat API Error]', error);
         return new Response(

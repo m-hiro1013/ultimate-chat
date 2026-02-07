@@ -138,10 +138,10 @@ export default function Home() {
   }, [setMessages]);
 
   // メッセージ送信ハンドラ
-  const handleSubmit = useCallback(async (content: string) => {
-    if (!content.trim()) return;
+  const handleSubmit = useCallback(async (content: string, attachments: { file: File; dataUrl: string }[] = []) => {
+    if (!content.trim() && attachments.length === 0) return;
 
-    // ユーザーメッセージをDBに保存
+    // ユーザーメッセージをDBに保存 (テキストのみ)
     if (currentConversation) {
       const userMessage: DBMessage = {
         id: crypto.randomUUID(),
@@ -153,7 +153,19 @@ export default function Home() {
     }
 
     // AI SDK v6: sendMessage関数でメッセージを送信
-    sendMessage({ text: content });
+    // partsを構築してマルチモーダル対応
+    const parts: any[] = [{ type: 'text', text: content }];
+
+    // 添付ファイルを追加
+    attachments.forEach(att => {
+      parts.push({
+        type: 'file',
+        data: att.dataUrl,
+        mediaType: att.file.type,
+      });
+    });
+
+    sendMessage({ parts });
   }, [currentConversation, sendMessage]);
 
   // 会話を切り替え

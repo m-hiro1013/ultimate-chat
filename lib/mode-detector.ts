@@ -38,9 +38,16 @@ export async function detectIntent(
 
         // Gemini 3 Flashで高速に意図分類（thinkingLevel: minimal）
         const result = await generateObject({
-            model: google('gemini-2.0-flash'),
+            model: google('gemini-3-flash-preview'),
             schema: intentSchema,
             prompt,
+            providerOptions: {
+                google: {
+                    thinkingConfig: {
+                        thinkingLevel: 'minimal',
+                    },
+                },
+            },
         });
 
         return result.object as IntentClassification;

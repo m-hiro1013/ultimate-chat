@@ -4,7 +4,7 @@
  * エラーリカバリー、リトライロジックを含む
  */
 
-import { streamText, generateObject } from 'ai';
+import { streamText, generateObject, stepCountIs } from 'ai';
 import { google, GoogleGenerativeAIProviderOptions } from '@ai-sdk/google';
 import { z } from 'zod';
 import { buildSystemPrompt } from './prompt-builder';
@@ -46,13 +46,13 @@ interface OrchestratorConfig {
  * オーケストレーション結果
  */
 interface OrchestratorResult {
-    stream: ReturnType<typeof streamText>;
+    stream: any;
     detectedMode: ChatMode;
     detectedThinkingLevel: ThinkingLevel;
     researchPlan?: ResearchPlan;
 }
 
-// リトライ設定
+// リプライ設定
 const MAX_RETRIES = 3;
 const RETRY_DELAY_BASE = 1000; // 1秒
 
@@ -188,7 +188,10 @@ ${researchPlan.fallbackStrategy}
                 messages,
                 tools: {
                     google_search: google.tools.googleSearch({}),
+                    url_context: google.tools.urlContext({}),
                 },
+                // 最大ステップ数を設定（リサーチモードは多めに）
+                stopWhen: stepCountIs(detectedMode === 'research' ? 10 : 3),
                 // Gemini 3 FlashのThinking設定
                 providerOptions: {
                     google: {
@@ -199,6 +202,38 @@ ${researchPlan.fallbackStrategy}
                 },
                 onStepFinish({ finishReason, usage }) {
                     console.log('[Step]', { finishReason, usage });
+                },
+                onFinish: async ({ text }) => {
+                    // リサーチモードの場合、品質チェックを実行（非同期）
+                    if (detectedMode === 'research') {
+                        try {
+                            const { QUALITY_CHECK_PROMPT } = await import('@/prompts/quality-check');
+                            const qualityResult = await generateObject({
+                                model: google('gemini-3-flash-preview'),
+                                schema: z.object({
+                                    accuracy: z.object({ score: z.number(), issues: z.array(z.string()) }),
+                                    completeness: z.object({ score: z.number(), gaps: z.array(z.string()) }),
+                                    usefulness: z.object({ score: z.number(), improvements: z.array(z.string()) }),
+                                    overallScore: z.number(),
+                                    needsAdditionalSearch: z.boolean(),
+                                    additionalSearchQueries: z.array(z.string()),
+                                }),
+                                prompt: QUALITY_CHECK_PROMPT
+                                    .replace('{question}', lastUserMessage)
+                                    .replace('{answer}', text),
+                                providerOptions: {
+                                    google: {
+                                        thinkingConfig: {
+                                            thinkingLevel: 'low',
+                                        },
+                                    },
+                                },
+                            });
+                            console.log('[Quality Check] Result:', qualityResult.object);
+                        } catch (error) {
+                            console.error('[Quality Check] Failed:', error);
+                        }
+                    }
                 },
                 onError({ error }) {
                     console.error('[StreamText Error]', error);

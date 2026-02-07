@@ -10,7 +10,7 @@ import { FileUpload } from './FileUpload';
 import type { ChatMode } from '@/types';
 
 interface InputAreaProps {
-    onSubmit: (message: string) => void;
+    onSubmit: (message: string, attachments: { file: File; dataUrl: string }[]) => void;
     mode: ChatMode;
     onModeChange: (mode: ChatMode) => void;
     disabled?: boolean;
@@ -40,7 +40,7 @@ export function InputArea({ onSubmit, mode, onModeChange, disabled = false }: In
         if (!input.trim() && attachments.length === 0) return;
         if (disabled) return;
 
-        onSubmit(input.trim());
+        onSubmit(input.trim(), attachments);
         setInput('');
         setAttachments([]);
         setShowFileUpload(false);

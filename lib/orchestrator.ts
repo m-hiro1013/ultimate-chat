@@ -304,6 +304,13 @@ async function generateResearchPlanWithRetry(userQuestion: string): Promise<Rese
                 model: google('gemini-3-flash-preview'),
                 schema: researchPlanSchema,
                 prompt,
+                providerOptions: {
+                    google: {
+                        thinkingConfig: {
+                            thinkingLevel: 'low',
+                        },
+                    },
+                },
             });
 
             return result.object as ResearchPlan;

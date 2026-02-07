@@ -13,12 +13,13 @@ import type { Message } from '@/types';
 interface ChatWindowProps {
     messages: Message[];
     isLoading: boolean;
+    onSelectSuggestion?: (text: string) => void;
 }
 
 /**
  * チャットメッセージを表示するスクロール可能なウィンドウ
  */
-export function ChatWindow({ messages, isLoading }: ChatWindowProps) {
+export function ChatWindow({ messages, isLoading, onSelectSuggestion }: ChatWindowProps) {
     const bottomRef = useRef<HTMLDivElement>(null);
 
     // 新しいメッセージ or ローディング状態変化で自動スクロール
@@ -42,10 +43,22 @@ export function ChatWindow({ messages, isLoading }: ChatWindowProps) {
                         <br />
                         あらゆるタスクをサポートします。
                     </p>
-                    <div className="mt-6 flex gap-3">
-                        <SuggestionChip emoji="🔍" text="最新のAI動向を調べて" />
-                        <SuggestionChip emoji="💻" text="Next.jsでTodoアプリを作って" />
-                        <SuggestionChip emoji="📖" text="この記事を要約して" />
+                    <div className="mt-6 flex flex-wrap justify-center gap-3">
+                        <SuggestionChip
+                            emoji="🔍"
+                            text="最新のAI動向を調べて"
+                            onClick={() => onSelectSuggestion?.("最新のAI動向を調べて")}
+                        />
+                        <SuggestionChip
+                            emoji="💻"
+                            text="Next.jsでTodoアプリを作って"
+                            onClick={() => onSelectSuggestion?.("Next.jsでTodoアプリを作って")}
+                        />
+                        <SuggestionChip
+                            emoji="📖"
+                            text="この記事を要約して"
+                            onClick={() => onSelectSuggestion?.("この記事を要約して")}
+                        />
                     </div>
                 </div>
             )}
@@ -71,9 +84,12 @@ export function ChatWindow({ messages, isLoading }: ChatWindowProps) {
 /**
  * 提案チップ（空の状態で表示）
  */
-function SuggestionChip({ emoji, text }: { emoji: string; text: string }) {
+function SuggestionChip({ emoji, text, onClick }: { emoji: string; text: string; onClick?: () => void }) {
     return (
-        <button className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 rounded-full text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+        <button
+            onClick={onClick}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 rounded-full text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+        >
             <span>{emoji}</span>
             <span>{text}</span>
         </button>

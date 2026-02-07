@@ -4,6 +4,7 @@
  */
 
 import { orchestrate } from '@/lib/orchestrator';
+import { checkAndSummarize } from '@/lib/context-manager';
 import type { ChatMode, ThinkingLevel, ConversationSummary } from '@/types';
 
 // 長いリサーチに備えて60秒に設定
@@ -16,6 +17,7 @@ interface ChatRequestBody {
         role: 'user' | 'assistant' | 'system';
         parts: Array<{ type: string; text?: string }>;
     }>;
+    conversationId?: string;
     mode?: ChatMode;
     thinkingLevel?: ThinkingLevel;
     longTermMemory?: string;
@@ -31,6 +33,7 @@ export async function POST(req: Request) {
         const body: ChatRequestBody = await req.json();
         const {
             messages,
+            conversationId,
             mode,
             thinkingLevel,
             longTermMemory,
@@ -38,6 +41,7 @@ export async function POST(req: Request) {
         } = body;
 
         console.log('[Chat API] Received request:', {
+            conversationId,
             mode,
             thinkingLevel,
             messageCount: messages?.length
@@ -48,6 +52,7 @@ export async function POST(req: Request) {
             const textParts = m.parts?.filter((p) => p.type === 'text') ?? [];
             const content = textParts.map((p) => p.text ?? '').join('');
             return {
+                id: m.id,
                 role: m.role as 'user' | 'assistant' | 'system',
                 content,
             };
@@ -55,16 +60,12 @@ export async function POST(req: Request) {
 
         console.log('[Chat API] Calling orchestrator...');
 
-        // データベースからコンテキストを取得 (conversationIdがある場合)
-        // 注意: route.ts では直接DBにアクセスせず、orchestratorに委ねるか、
-        // クライアントから渡された値を使用する。現状は body から渡されている。
-
         // バックグラウンドで要約チェック（レスポンスをブロックしない）
-        // 型定義に conversationId が必要なので追加検討
-        // const { ..., conversationId } = body;
-        // if (conversationId) {
-        //     checkAndSummarize(conversationId, simpleMessages).catch(console.error);
-        // }
+        if (conversationId) {
+            checkAndSummarize(conversationId, simpleMessages).catch(err =>
+                console.error('[Chat API] checkAndSummarize failed:', err)
+            );
+        }
 
         // オーケストレーション層を呼び出し
         const result = await orchestrate({

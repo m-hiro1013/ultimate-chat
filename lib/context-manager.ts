@@ -106,9 +106,16 @@ export async function checkAndSummarize(
         const prompt = CONTEXT_SUMMARY_PROMPT.replace('{conversation_history}', conversationHistory);
 
         const result = await generateObject({
-            model: google('gemini-2.0-flash'),
+            model: google('gemini-3-flash-preview'),
             schema: summarySchema,
             prompt,
+            providerOptions: {
+                google: {
+                    thinkingConfig: {
+                        thinkingLevel: 'low',
+                    },
+                },
+            },
         });
 
         const summary = result.object as ConversationSummary;

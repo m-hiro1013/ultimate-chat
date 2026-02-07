@@ -303,6 +303,7 @@ export default function Home() {
             parts: m.parts as any,
           }))}
           isLoading={status === 'streaming'}
+          onSelectSuggestion={handleSubmit}
         />
 
         {/* 思考中インジケータ */}

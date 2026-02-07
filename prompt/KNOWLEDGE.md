@@ -20,23 +20,27 @@
    - 問題: フロントエンドでファイルデータがAPIまで到達していなかった
    - 解決: `sendMessage({ parts })` を使用し、各ファイルを `type: 'file'` パートとして明示的に送信するように修正
 
+### 2026-02-08 セッション II（GENSPARK基準準拠改善）
+
+#### 学んだこと（+3 = 必須級, +2 = 推奨, +1 = 参考）
+
+| 知見 | ウェイト | カテゴリ |
+|------|---------|---------|
+| Gemini 3 FlashでのFunction Callingでは、モデルが出力した `thoughtSignature` を次のリクエストの履歴に含めないと400エラーが発生する | +3 | Gemini |
+| AI SDK v6において `parts` ベースの通信を行う場合、型定義 (`MessagePart`) を拡張し、`toUIMessageStreamResponse` への橋渡しを正確に行う必要がある | +3 | AI SDK |
+| `maxSteps` は `streamText` の最上位オプションとして設定可能。リサーチモードでは10ステップが深掘りのベストプラクティス | +2 | AI SDK |
+| ユーザーの信頼性（Genspark基準）を確保するためには、AIの思考やツール呼び出し（検索クエリ）を個別のUIパーツとして可視化することが極めて有効 | +2 | UI/UX |
 
 #### ハマったポイント
 
-1. **AI SDK v6のAPI変更**
-   - 問題: `append is not a function`エラー
-   - 原因: AI SDK v6では`useChat`の返り値が変更された
-   - 解決: `sendMessage({ text })` + `DefaultChatTransport`を使用
+1. **Thought Signatureの消失**
+   - 問題: マルチターン会話で突然400エラーが発生する
+   - 原因: 会話履歴を `content: string` に丸める際、モデルが生成した `thoughtSignature` (parts内の特殊パーツ) が消失していた
+   - 解決: サーバー・クライアント間の通信で一貫して `parts` を保持し、履歴再構成時にもそのままGeminiに返すようにした
 
-2. **コードブロックの[object Object]表示**
-   - 問題: コードブロック内に`[object Object]`が表示される
-   - 原因: ReactMarkdownのchildrenがReactノードの配列になっている
-   - 解決: 再帰的に文字列を抽出する`getCodeString`関数を実装
-
-3. **ボタンのネストエラー**
-   - 問題: Hydrationエラー（ボタン内にボタン）
-   - 原因: サイドバーの会話アイテムがbutton要素で、削除ボタンもその中にある
-   - 解決: 外側のボタンをdiv要素に変更
+2. **UIコンポーネントのHydrationとネスト**
+   - 問題: インライン引用 [1] などをMarkdownリンクに変換する際、レンダリングが複雑化
+   - 解決: `MessageParts` にて正規表現で事前処理を行い、`ReactMarkdown` がリンクとして安全に処理できるように調整
 
 ---
 
@@ -61,16 +65,14 @@ const result = streamText({
 ### AI SDK v6 useChat
 
 ```typescript
-// 正しいAPI使用
+// 正しいAPI使用 (MessageParts対応)
 const { messages, sendMessage, status } = useChat({
   transport: new DefaultChatTransport({
     api: '/api/chat',
   }),
 });
 
-// メッセージ送信
-sendMessage({ text: content });
-
-// ローディング状態
-const isLoading = status === 'streaming';
+// メッセージ送信 (partsを使用)
+const parts = [{ type: 'text', text: content }];
+sendMessage({ parts });
 ```

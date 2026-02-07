@@ -71,7 +71,21 @@ export function ChatWindow({ messages, isLoading, onSelectSuggestion }: ChatWind
             {/* 思考中インジケータ */}
             {isLoading && (
                 <div className="mb-4">
-                    <ThinkingIndicator isThinking={true} status="thinking" />
+                    {(() => {
+                        const lastMessage = messages[messages.length - 1];
+                        let status: 'thinking' | 'searching' | 'reading' | 'analyzing' = 'thinking';
+
+                        if (lastMessage?.role === 'assistant' && lastMessage?.parts) {
+                            const toolCalls = lastMessage.parts.filter(p => p.type === 'tool-call');
+                            const lastTool = toolCalls[toolCalls.length - 1];
+                            if (lastTool && 'toolName' in lastTool) {
+                                if (lastTool.toolName === 'google_search') status = 'searching';
+                                if (lastTool.toolName === 'url_context') status = 'reading';
+                            }
+                        }
+
+                        return <ThinkingIndicator isThinking={true} status={status} />;
+                    })()}
                 </div>
             )}
 

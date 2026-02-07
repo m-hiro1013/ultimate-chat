@@ -10,7 +10,22 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { CodeBlock } from './CodeBlock';
 import { SourceCitation } from './SourceCitation';
+import { ThinkingBlock } from './ThinkingBlock';
+import { SearchQueries } from './SearchQueries';
 import type { MessagePart } from '@/types';
+
+/**
+ * インライン引用 [1], [2] 等をリンクに変換する簡易処理
+ */
+function processInlineCitations(content: string, sources: any[]): string {
+    return content.replace(/\[(\d+)\]/g, (match, num) => {
+        const index = parseInt(num) - 1;
+        if (sources[index]) {
+            return `[${num}](${sources[index].url})`;
+        }
+        return match;
+    });
+}
 
 interface MessagePartsProps {
     content: string;
@@ -24,8 +39,35 @@ export function MessageParts({ content, parts }: MessagePartsProps) {
     // ソースパーツを抽出
     const sources = parts?.filter((p): p is Extract<MessagePart, { type: 'source' }> => p.type === 'source') ?? [];
 
+    // 思考プロセスを抽出
+    const thinkingParts = parts?.filter(
+        (p): p is { type: 'thinking'; text: string } => p.type === 'thinking'
+    ) ?? [];
+
+    // 検索クエリを抽出（tool-callから）
+    const toolCalls = parts?.filter(
+        (p): p is { type: 'tool-call'; toolName: string; args: any } => p.type === 'tool-call'
+    ) ?? [];
+    const searchQueries = toolCalls
+        .filter(tc => tc.toolName === 'google_search')
+        .map(tc => tc.args?.query || '')
+        .filter(Boolean);
+
+    // インライン引用を処理
+    const processedContent = sources.length > 0
+        ? processInlineCitations(content, sources)
+        : content;
+
     return (
-        <div className="message-content">
+        <div className="message-content space-y-2">
+            {/* 思考プロセス */}
+            {thinkingParts.map((part, i) => (
+                <ThinkingBlock key={`thinking-${i}`} content={part.text} />
+            ))}
+
+            {/* 検索クエリ */}
+            {searchQueries.length > 0 && <SearchQueries queries={searchQueries} />}
+
             {/* メインテキスト（Markdown） */}
             <div className="prose prose-sm dark:prose-invert max-w-none">
                 <ReactMarkdown
@@ -81,7 +123,7 @@ export function MessageParts({ content, parts }: MessagePartsProps) {
                         },
                     }}
                 >
-                    {content}
+                    {processedContent}
                 </ReactMarkdown>
             </div>
 

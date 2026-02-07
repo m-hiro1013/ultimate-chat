@@ -106,9 +106,12 @@ export interface Message {
  */
 export type MessagePart =
     | { type: 'text'; text: string }
+    | { type: 'thinking'; text: string }
     | { type: 'image'; url: string; alt?: string }
     | { type: 'file'; name: string; url: string; mimeType: string }
-    | { type: 'source'; url: string; title: string; snippet?: string };
+    | { type: 'source'; url: string; title: string; snippet?: string }
+    | { type: 'tool-call'; toolName: string; args: any }
+    | { type: 'tool-result'; toolName: string; result: any };
 
 /**
  * APIリクエストのペイロード

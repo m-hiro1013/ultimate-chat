@@ -1,6 +1,6 @@
 workflow:
   version: "0.2.0"
-  last_updated: "2026-02-08T00:25:00+09:00"
+  last_updated: "2026-02-08T08:29:00+09:00"
 
   # 🚨 毎セッション必ず参照するファイル
   session_references:
@@ -15,24 +15,24 @@ workflow:
 
   last_session_summary: |
     【今回のセッションでやったこと】
-    - ツール連携修正: `url_context`を有効化し、`google_search`との併用を実現
-    - 多段ステップ実装: `stopWhen` (stepCountIs) で最大10ステップのリサーチループを可能に
-    - Grounding Metadata有効化: `route.ts`で`sendSources: true`を設定し、出典表示に対応
-    - ファイルアップロード修正: `InputArea`からAPIへのマルチモーダルデータ送信を実装
-    - 意図分類最適化: モデルをGemini 3 Flashに統一し、`thinkingLevel: 'minimal'`で高速化
-    - コンテキスト管理有効化: 背景での会話要約生成のループをAPIに統合
-    - コスト最適化: リサーチ計画、要約生成に`thinkingLevel: 'low'`を適用
-    - UI改善: 提案チップ（SuggestionChip）のクリック連動を実装
+    - マルチモーダル完全対応: `route.ts`および`orchestrator.ts`にて`parts`ベースのメッセージ通信を実装し、画像・ファイルデータの欠落を解消
+    - Thinking Signatures保持: 会話履歴に推論シグネチャを保持・返送することで、マルチターン会話での400エラーを防止
+    - 入力バリデーション: `Zod`を導入し、APIリクエストの安全性を強化
+    - 🔍 検索クエリ表示: `SearchQueries.tsx`を新規作成し、AIの検索プロセスをフロントエンドで可視化
+    - 🧠 思考プロセス表示: `ThinkingBlock.tsx`を新規作成し、AIの内部推論を展開可能に
+    - Operational Limits最適化: `maxSteps` (リサーチモード: 10) や `temperature: 1.0` を設定し、出力品質を向上
+    - 型安全性向上: `MessagePart`型を拡張し、新規UIパーツに対応
     
     【次にやること】
     - Vercelデプロイと環境変数の設定（GOOGLE_GENERATIVE_AI_API_KEY）
+    - セキュリティスキャン（npm audit）の実行
     - 長期運用での要約精度の評価
 
   progress:
     current_phase:
-      number: 7
-      name: "運用・最適化"
-      status: "done"
+      number: 8
+      name: "継続的改善・デプロイ"
+      status: "in_progress"
     
     completed_phases:
       - phase: 1
@@ -56,6 +56,9 @@ workflow:
       - phase: 7
         name: "運用・最適化（Phase F）"
         completed_at: "2026-02-08"
+      - phase: 7.1
+        name: "GENSPARK基準準拠改善"
+        completed_at: "2026-02-08"
     
     next_tasks:
       - "Vercelデプロイ"
@@ -75,6 +78,14 @@ workflow:
         date: "2026-02-08"
         decision: "ビルトインツール（Search/URL）を優先し、カスタムツールの不整合を回避"
         reason: "現在、ビルトインとカスタムツールの併用におけるSDK側の制限を考慮"
+      - id: "D006"
+        date: "2026-02-08"
+        decision: "マルチモーダル対応のため、MessagePart型をベースにしたparts通信を全層で採用"
+        reason: "画像やファイルのデータ、およびGemini特有のThought Signatureを確実に受け渡すため"
+      - id: "D007"
+        date: "2026-02-08"
+        decision: "AIの透明性向上のため、思考プロセスと検索クエリを独立したUIパーツとして表示"
+        reason: "GENSPARK基準に基づく信頼性と透明性の確保"
 
   features:
     completed:
@@ -99,6 +110,9 @@ workflow:
       - id: "F013"
         name: "提案チップ連動"
         status: "done"
+      - id: "F014"
+        name: "リサーチ透明性UI（思考・検索表示）"
+        status: "done"
     
     in_progress: []
     
@@ -106,9 +120,20 @@ workflow:
       - id: "F011"
         name: "Vercelデプロイ"
 
+  file_structure:
+    created:
+      - "components/SearchQueries.tsx"
+      - "components/ThinkingBlock.tsx"
+    to_modify:
+      - "app/api/chat/route.ts"
+      - "lib/orchestrator.ts"
+      - "components/MessageParts.tsx"
+      - "components/ChatWindow.tsx"
+
   cautions:
     - "Google SearchとURL Contextは両方ビルトインツール。これらにカスタムツールを追加するとFunction Callingが阻害される既知の制限がある"
     - "背景での要約生成（checkAndSummarize）には有効なconversationIdの送信が必須"
+    - "Gemini 3 FlashではThought Signatureを次のメッセージに含めないと400エラーが発生する"
 
   repository:
     url: "https://github.com/m-hiro1013/ultimate-chat"

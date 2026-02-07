@@ -34,6 +34,7 @@ interface OrchestratorConfig {
     messages: Array<{
         role: 'user' | 'assistant' | 'system';
         content: string;
+        parts?: Array<{ type: string;[key: string]: any }>;
     }>;
     mode?: ChatMode;
     thinkingLevel?: ThinkingLevel;
@@ -141,7 +142,7 @@ export async function orchestrate(config: OrchestratorConfig): Promise<Orchestra
 
             // リサーチ計画をシステムプロンプトに注入
             additionalSystemPrompt = `
-## リサーチ計画
+\n## リサーチ計画
 以下の検索戦略に基づいて調査を行ってください：
 
 ### 検索クエリ
@@ -185,14 +186,13 @@ ${researchPlan.fallbackStrategy}
             stream = streamText({
                 model: google('gemini-3-flash-preview'),
                 system: systemPrompt,
-                messages,
+                messages: messages as any,
+                maxSteps: detectedMode === 'research' ? 10 : 3, // AI SDK v6 replacement for manual step management
+                temperature: 1.0,
                 tools: {
                     google_search: google.tools.googleSearch({}),
                     url_context: google.tools.urlContext({}),
                 },
-                // 最大ステップ数を設定（リサーチモードは多めに）
-                stopWhen: stepCountIs(detectedMode === 'research' ? 10 : 3),
-                // Gemini 3 FlashのThinking設定
                 providerOptions: {
                     google: {
                         thinkingConfig: {
@@ -268,7 +268,9 @@ ${researchPlan.fallbackStrategy}
     stream = streamText({
         model: google('gemini-3-flash-preview'),
         system: systemPrompt + '\n\n' + ERROR_RECOVERY_PROMPT,
-        messages,
+        messages: messages as any,
+        maxTokens: 65536, // ← 追加
+        temperature: 1.0,  // ← 追加
         // ツールなしでフォールバック、thinkingはminimalで高速化
         providerOptions: {
             google: {

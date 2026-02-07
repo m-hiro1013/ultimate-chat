@@ -1,0 +1,123 @@
+# Ultimate Chat - ワークフロー（セーブデータ）
+# 🎀 りなちーが管理するプロジェクト進捗管理ファイル
+
+workflow:
+  version: "0.1.0"
+  last_updated: "2026-02-08T00:02:00+09:00"
+
+  # 🚨 毎セッション必ず参照するファイル
+  session_references:
+    must_read:
+      - path: "gemini.txt"
+        description: "Gemini 3 Flash Preview実装完全ガイド（API仕様、制限事項、ベストプラクティス）"
+      - path: "memo.txt"
+        description: "究極実装手順書（全7フェーズの詳細設計と進捗チェックリスト）"
+    optional:
+      - path: "prompt/KNOWLEDGE.md"
+        description: "過去のセッションで得た知見"
+
+  last_session_summary: |
+    【今回のセッションでやったこと】
+    - AI SDK v6対応: useChat hookのAPI変更に完全対応（sendMessage, DefaultChatTransport）
+    - Gemini 3 Flash Preview対応: モデルをgemini-3-flash-previewに統一
+    - thinkingLevel設定: providerOptions.google.thinkingConfigで設定
+    - コードブロック表示修正: [object Object]問題を解決（getCodeString関数追加）
+    - サイドバーHTMLエラー修正: ボタンのネスト問題を解決（buttonをdivに変更）
+    - GitHubリポジトリ作成: m-hiro1013/ultimate-chatにプッシュ完了
+    
+    【次にやること】
+    - Phase 6-1: 品質チェック統合（リサーチ結果の自動評価）
+    - Phase 3-6: FileUpload統合
+    - Phase 7-5: Vercelデプロイ
+
+  progress:
+    current_phase:
+      number: 6
+      name: "品質向上"
+      status: "in_progress"
+    
+    completed_phases:
+      - phase: 1
+        name: "プロジェクト初期セットアップ"
+        completed_at: "2026-02-06"
+      - phase: 2
+        name: "バックエンドAPI"
+        completed_at: "2026-02-06"
+      - phase: 3
+        name: "フロントエンドUI"
+        completed_at: "2026-02-07"
+      - phase: 4
+        name: "オーケストレーション層"
+        completed_at: "2026-02-07"
+      - phase: 5
+        name: "コンテキスト管理"
+        completed_at: "2026-02-07"
+    
+    next_tasks:
+      - "品質チェック統合（quality-check.tsプロンプトを使用）"
+      - "FileUpload統合（InputAreaへの連携）"
+      - "Vercelデプロイ"
+      - "全テストケース実行"
+
+  decisions:
+    adopted:
+      - id: "D001"
+        date: "2026-02-07"
+        decision: "Gemini 3 Flash Previewをメインモデルとして使用"
+        reason: "最新のThinking機能とGoogle Search Groundingをサポート"
+      - id: "D002"
+        date: "2026-02-07"
+        decision: "AI SDK v6のAPI（sendMessage, DefaultChatTransport）を採用"
+        reason: "最新のuseChat hookの正式API"
+      - id: "D003"
+        date: "2026-02-07"
+        decision: "thinkingLevelはモード別に自動設定"
+        reason: "research=high, general=medium/minimal, coding=high"
+
+  features:
+    completed:
+      - id: "F001"
+        name: "基本チャットUI"
+        status: "done"
+      - id: "F002"
+        name: "Gemini 3 Flash統合"
+        status: "done"
+      - id: "F003"
+        name: "Google Search Grounding"
+        status: "done"
+      - id: "F004"
+        name: "IndexedDB会話永続化"
+        status: "done"
+      - id: "F005"
+        name: "サイドバー（会話履歴）"
+        status: "done"
+      - id: "F006"
+        name: "設定パネル"
+        status: "done"
+      - id: "F007"
+        name: "コードブロック表示"
+        status: "done"
+      - id: "F008"
+        name: "キーボードショートカット"
+        status: "done"
+    
+    in_progress:
+      - id: "F009"
+        name: "品質チェック統合"
+        status: "in_progress"
+    
+    planned:
+      - id: "F010"
+        name: "FileUpload統合"
+      - id: "F011"
+        name: "Vercelデプロイ"
+
+  cautions:
+    - "AI SDK v6では handleSubmit/handleInputChange は存在しない。sendMessage({ text })を使用"
+    - "Gemini 3 FlashのTemperatureは1.0固定（変更非推奨）"
+    - "コードブロックのchildrenは再帰的に文字列化が必要（Reactノード対応）"
+    - "HTMLでボタンのネストは禁止（divを使用）"
+
+  repository:
+    url: "https://github.com/m-hiro1013/ultimate-chat"
+    branch: "main"

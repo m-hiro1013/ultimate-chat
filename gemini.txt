@@ -1,0 +1,334 @@
+Gemini 3 Flash Preview 実装完全ガイド
+モデル基本情報
+モデルID:  gemini-3-flash-preview
+コンテキスト: 入力 1M / 出力 64K トークン
+知識カットオフ: 2025年1月
+Temperature: デフォルト 1.0（変更非推奨）
+ステータス: Preview（安定版ではない。仕様変更の可能性あり）
+Part 1: できること
+1-1. テキスト生成（基本）
+Copyfrom google import genai
+
+client = genai.Client()
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="量子コンピュータを小学生に説明して",
+)
+print(response.text)
+注意点: Temperatureはデフォルト1.0のまま使うこと。1.0未満に下げると、ループや推論品質の低下が起きやすい。これは2.5系とは異なる3 Flash独自の挙動。
+
+1-2. Thinking（推論制御）
+4段階の thinkingLevel で制御する。デフォルトは high。
+
+Copyfrom google.genai import types
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="AIMEの問題を解いて",
+    config=types.GenerateContentConfig(
+        thinking_config=types.ThinkingConfig(thinking_level="high")
+    ),
+)
+レベル	用途	コスト感
+minimal	チャット、高スループット。ほぼ思考なし（ただし完全OFFは保証されない）	最安
+low	簡単な質問応答、分類タスク	安い
+medium	一般的なタスクのバランス型	中程度
+high（デフォルト）	複雑な推論、コーディング、数学。ダイナミックに深さ調整	最高
+Thought Summary（思考過程の確認）:
+
+Copyresponse = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="最初の50個の素数の合計は？",
+    config=types.GenerateContentConfig(
+        thinking_config=types.ThinkingConfig(include_thoughts=True)
+    ),
+)
+
+for part in response.candidates[0].content.parts:
+    if not part.text:
+        continue
+    if part.thought:
+        print("【思考過程】", part.text)
+    else:
+        print("【回答】", part.text)
+コスト上の重要ポイント: thinkingトークンは「出力トークン」として $3.00/1M で課金される。highは大量のthinkingトークンを消費するので、簡単なタスクにはminimalやlowを使い分けるとコスト削減になる。
+
+1-3. Structured Output + ツール併用
+3 Flash最大の強みの一つ。Google Search等のツールと、JSONスキーマ指定を同時に使える。
+
+Copyfrom pydantic import BaseModel, Field
+from typing import List
+
+class ProductInfo(BaseModel):
+    name: str = Field(description="商品名")
+    price: int = Field(description="価格（円）")
+    rating: float = Field(description="評価（5段階）")
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="2026年のおすすめワイヤレスイヤホンを3つ調べて",
+    config={
+        "tools": [
+            {"google_search": {}},
+            {"url_context": {}}
+        ],
+        "response_mime_type": "application/json",
+        "response_json_schema": ProductInfo.model_json_schema(),
+    },
+)
+
+result = ProductInfo.model_validate_json(response.text)
+print(result)
+1-4. Google Search Grounding
+Copyresponse = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="今日の東京の天気は？",
+    config=types.GenerateContentConfig(
+        tools=[types.Tool(google_search=types.GoogleSearch())]
+    ),
+)
+Paid Tier 無料枠: 月5,000プロンプトまで無料。超過後 $14/1,000クエリ。1リクエストが複数の検索クエリに分割されることがあるので注意。
+
+1-5. Function Calling（Thought Signature必須）
+ここが最大のハマりポイント。 3 Flashでは、Function Callingの応答に付いてくる thoughtSignature を必ず次のリクエストに返さないと 400エラー になる。
+
+基本フロー
+Copy# Step 1: 関数を定義
+tools = types.Tool(function_declarations=[
+    types.FunctionDeclaration(
+        name="get_weather",
+        description="指定都市の天気を取得",
+        parameters={
+            "type": "object",
+            "properties": {
+                "city": {"type": "string", "description": "都市名"}
+            },
+            "required": ["city"]
+        }
+    )
+])
+
+# Step 2: リクエスト送信
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="東京の天気は？",
+    config=types.GenerateContentConfig(tools=[tools]),
+)
+
+# Step 3: レスポンスからfunction_callとthoughtSignatureを取得
+# Google GenAI SDKを使っていれば自動管理される
+Thought Signature のルール
+順次呼び出し（Sequential）の場合:
+
+ユーザー: "フライトを確認して、遅延ならタクシーを予約して"
+  ↓
+モデル: check_flight() + Signature_A  ← 保存必須
+  ↓
+ユーザー: check_flightの結果 + Signature_A を返す
+  ↓
+モデル: book_taxi() + Signature_B  ← 保存必須
+  ↓
+ユーザー: book_taxiの結果 + Signature_A + Signature_B 両方返す
+すべてのステップのSignatureを蓄積して毎回返す必要がある。
+
+並列呼び出し（Parallel）の場合:
+
+モデル: get_weather("東京") + Signature_A, get_weather("大阪")  ← 最初だけSignatureあり
+  ↓
+ユーザー: 両方のFunctionResponseを返す（Signature_Aを維持）
+最初のfunctionCallにだけSignatureが付く。順番を変えてはいけない。
+
+重要な注意点:
+
+公式SDKを使えば自動処理される。REST APIを直接叩く場合のみ手動管理が必要
+並列呼び出しでFCとFRをインターリーブ（交互に並べる）すると400エラーになる。FC1, FC2, FR1, FR2の順で送ること
+2.5系モデルからの会話履歴を引き継ぐ場合、Signatureがないので "thoughtSignature": "context_engineering_is_the_way_to_go" というダミー文字列をセットしてバリデーションをスキップできる
+ストリーミング時、Signatureはテキストが空のチャンクに含まれることがある。finish_reason が返るまでパースを続けること
+1-6. Code Execution + ビジュアルシンキング
+画像を送ると、モデルが自分でPythonコードを書いてクロップ・拡大・注釈付けなどをして再分析する。
+
+Copyimport requests
+
+image_bytes = requests.get("https://example.com/meter.jpg").content
+image = types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents=[
+        image,
+        "このメーターの数値を読み取って"
+    ],
+    config=types.GenerateContentConfig(
+        tools=[types.Tool(code_execution=types.ToolCodeExecution)]
+    ),
+)
+
+for part in response.candidates[0].content.parts:
+    if part.text:
+        print(part.text)
+    if part.executable_code:
+        print("【実行コード】", part.executable_code.code)
+    if part.code_execution_result:
+        print("【実行結果】", part.code_execution_result.output)
+1-7. Computer Use（ブラウザ操作）
+3 Flashはそのまま computer_use ツールを使える（2.5系のように別モデル不要）。
+
+Copyfrom playwright.sync_api import sync_playwright
+
+playwright = sync_playwright().start()
+browser = playwright.chromium.launch(headless=False)
+page = browser.new_page()
+page.goto("https://www.google.com")
+
+config = types.GenerateContentConfig(
+    tools=[types.Tool(computer_use=types.ComputerUse(
+        environment=types.Environment.ENVIRONMENT_BROWSER
+    ))],
+)
+
+contents = [
+    types.Content(role="user", parts=[
+        types.Part(text="Google検索で「Gemini 3 Flash」を検索して"),
+        types.Part.from_bytes(data=page.screenshot(type="png"), mime_type="image/png")
+    ])
+]
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents=contents,
+    config=config,
+)
+実装のポイント:
+
+モデルは座標を0-999の正規化座標で返す。実際のピクセルに変換が必要: actual_x = int(x / 1000 * screen_width)
+推奨画面サイズは 1440x900
+safety_decision が require_confirmation の場合、ユーザー確認なしで実行してはいけない（利用規約違反）
+必ずサンドボックス環境（Docker、VM等）で実行すること
+1-8. URL Context
+Webページの内容を取得して入力に含める。
+
+Copyresponse = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="このページの要約をして",
+    config=types.GenerateContentConfig(
+        tools=[types.Tool(url_context=types.UrlContext())]
+    ),
+)
+取得されたページの内容は入力トークンとして課金される。
+
+1-9. File Search
+Copyresponse = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="アップロードしたドキュメントから売上データを抽出して",
+    config=types.GenerateContentConfig(
+        tools=[types.Tool(file_search=types.FileSearch())]
+    ),
+)
+Embedding作成に $0.15/1Mトークン + 取得ドキュメントの入力トークン課金。
+
+1-10. Context Caching
+同じシステムプロンプトや大量のドキュメントを繰り返し使う場合にコスト削減できる。
+
+Copy# キャッシュ作成
+cache = client.caches.create(
+    model="gemini-3-flash-preview",
+    config=types.CreateCachedContentConfig(
+        contents=[types.Content(role="user", parts=[types.Part(text="大量のドキュメント...")])],
+        ttl="3600s",
+    )
+)
+
+# キャッシュを使ってリクエスト
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="このドキュメントの要約",
+    config=types.GenerateContentConfig(cached_content=cache.name),
+)
+キャッシュされたトークンは入力 $0.05/1M（通常の1/10）で済むが、保存に $1.00/1Mトークン/時 がかかる。
+
+1-11. Batch API
+リアルタイム性が不要な大量処理で50%割引。
+
+項目	料金
+入力	$0.25（通常$0.50）
+出力	$1.50（通常$3.00）
+1-12. Media Resolution 制御
+画像・動画・PDFの解像度をきめ細かく指定できる（3 Flash独自機能）。
+
+Copy# v1alpha APIで利用可能
+client = genai.Client(http_options={'api_version': 'v1alpha'})
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents=[
+        types.Content(parts=[
+            types.Part(text="この画像の細かい文字を読んで"),
+            types.Part(
+                inline_data=types.Blob(mime_type="image/jpeg", data=image_bytes),
+                media_resolution={"level": "media_resolution_high"}
+            )
+        ])
+    ]
+)
+メディア種別	推奨設定	最大トークン/枚(フレーム)
+画像	high	1120
+PDF	medium	560
+動画（一般）	low or medium	70
+動画（文字読み取り）	high	280
+Part 2: できないこと
+2-1. 画像生成
+3 Flash単体では画像を生成できない。画像生成が必要なら gemini-3-pro-image-preview（Nano Banana Pro）を使う。
+
+2-2. 画像セグメンテーション
+ピクセルレベルのマスクを返す機能は3 Flash/3 Proどちらも非対応。必要なら gemini-2.5-flash（thinking OFF）または gemini-robotics-er-1.5-preview を使う。
+
+2-3. Google Maps Grounding
+3 Flashでは未対応。地理情報のグラウンディングが必要なら 2.5 Flash/2.5 Flash-Lite を使う。
+
+2-4. Thinkingの完全OFF
+minimal でもゼロになる保証がない。完全にthinkingを無効化したい場合は 2.5 Flash（thinkingBudget=0）を使う。
+
+2-5. Live API（ネイティブ音声）
+3 Flash単体ではリアルタイム音声対話はできない。専用のLive API音声モデルが必要。
+
+2-6. ビルトインツール + Function Callingの同時使用
+Google Search等のビルトインツールとカスタムFunction Callingを同一リクエストで併用することは現時点で非対応。
+
+2-7. Deep Research
+Deep Research Agentは Gemini 3 Pro の料金体系で動作し、3 Flashでは使えない。
+
+Part 3: 既知の問題とハマりポイント
+3-1. Thought Signatureの不整合（バグ報告あり）
+並列Function Callingで thoughtSignature が不安定に生成されるケースがコミュニティで報告されている。SDKを使っていても稀に400エラーが出る場合は、リトライロジックを実装しておくのが安全。
+
+3-2. 出力トークン数の制限
+3 Flashの出力は3 Proや2.5 Proと比べて短くなる傾向がある（コミュニティ報告では半分程度のケースも）。長文出力が必要な場合は、プロンプトで明示的に長さを指示するか、分割して生成する工夫が必要。
+
+3-3. Preview特有のレートリミット
+Previewモデルは安定版よりレートリミットが厳しい。429エラーが頻発する場合は、指数バックオフ付きのリトライを実装すること。
+
+3-4. 長文コンテキストでのドリフト
+1Mトークンのコンテキストウィンドウはあるが、実用上は120-150Kトークンを超えるとコンテキストの保持精度が落ちるという報告がある。大量ドキュメントを扱う場合はContext Cachingや分割処理を検討。
+
+3-5. 2.5からの移行時の注意
+Temperature: 2.5で0.2などに設定していた場合、3 Flashでは1.0に戻すこと
+PDF解像度: デフォルトの解像度が変わっているのでテストが必要
+動画のトークン消費: 3 Flashの方が少ない傾向（コスト削減になりうる）
+画像のトークン消費: デフォルト解像度が上がっているため増える場合がある
+Thought Signature: 2.5では任意だったものが3では必須。既存コードの修正が必要
+Part 4: コスト最適化のベストプラクティス
+タスク別のThinking Level設定:
+
+タスク例	推奨レベル	理由
+チャットボット応答	minimal	速度優先、思考不要
+テキスト分類・抽出	low	軽い推論で十分
+要約・翻訳	medium	バランス型
+コーディング・数学・複雑な分析	high	深い推論が必要
+その他:
+
+大量処理は Batch API（50%OFF）を活用
+同じプロンプトの繰り返しは Context Caching で入力コストを1/10に
+画像/PDFの media_resolution を適切に設定してトークン消費を抑える
+Google Searchの月5,000無料枠を超えそうなら、本当に検索が必要なリクエストだけにツールを付ける
+以上が Gemini 3 Flash Preview の実装に必要な情報の全体像です。特にThought Signatureの扱いとTemperature 1.0固定の2点は、2.5系から移行するときに最もハマりやすいポイントなので注意してください。

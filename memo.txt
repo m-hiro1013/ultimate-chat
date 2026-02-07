@@ -1,0 +1,1090 @@
+究極実装手順書
+「Genspark を、自分の手で」
+Gemini 3 Flash × Next.js × AI SDK 完全構築ガイド
+0. このドキュメントの読み方
+この手順書は上から順にそのまま実行すれば完成する。各ステップは「やること」「なぜやるか」「具体的なコマンドまたはコード」の3点セットで構成されている。プロンプトファイルはすべて独立ファイルとして設計し、プロンプトインデックス（辞書）で一元管理する。
+
+1. アーキテクチャ全体図
+┌──────────────────────────────────────────────────────────┐
+│                     ブラウザ（フロントエンド）                │
+│                                                          │
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │  Next.js App (React)                                │  │
+│  │                                                     │  │
+│  │  useChat (AI SDK UI)                                │  │
+│  │    ├─ チャットメッセージ表示（Markdown + コードハイライト） │  │
+│  │    ├─ ファイル添付（画像/PDF/テキスト/コード）         │  │
+│  │    ├─ モード切替（一般/リサーチ/コーディング）         │  │
+│  │    ├─ 検索ソース引用表示                              │  │
+│  │    └─ ストリーミング表示                              │  │
+│  │                                                     │  │
+│  │  IndexedDB (Dexie.js)                               │  │
+│  │    ├─ 会話履歴（全セッション永続化）                   │  │
+│  │    ├─ ユーザー設定（長期記憶）                        │  │
+│  │    └─ プロジェクトコンテキスト                        │  │
+│  └─────────────────────────────────────────────────────┘  │
+└──────────────────────────┬───────────────────────────────┘
+                           │ POST /api/chat
+                           ▼
+┌──────────────────────────────────────────────────────────┐
+│                  Next.js API Route（バックエンド）          │
+│                                                          │
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │  オーケストレーション層                               │  │
+│  │                                                     │  │
+│  │  1. モード自動判定（意図分析）                        │  │
+│  │  2. システムプロンプト動的構築                        │  │
+│  │  3. コンテキスト管理（短期/中期/長期）                │  │
+│  │  4. AI SDK streamText + multi-step tool calling      │  │
+│  │  5. 品質チェック＆リトライ                            │  │
+│  └─────────────────────────────────────────────────────┘  │
+│                                                          │
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │  Gemini 3 Flash API (via AI SDK @ai-sdk/google)     │  │
+│  │                                                     │  │
+│  │  ビルトインツール:                                   │  │
+│  │    ├─ google.tools.googleSearch()  ← Web検索         │  │
+│  │    └─ google.tools.urlContext()    ← URL読み取り      │  │
+│  │                                                     │  │
+│  │  カスタムツール:                                     │  │
+│  │    ├─ deepResearch  ← 多段階リサーチ                  │  │
+│  │    ├─ analyzeFile   ← ファイル深層解析                │  │
+│  │    └─ generateCode  ← コード生成補助                  │  │
+│  │                                                     │  │
+│  │  設定:                                               │  │
+│  │    ├─ thinkingLevel: "high"                          │  │
+│  │    ├─ stopWhen: stepCountIs(10)                      │  │
+│  │    └─ temperature: 1.0 (デフォルト維持)               │  │
+│  └─────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────┘
+2. 技術スタック確定
+レイヤー	技術	バージョン	選定理由
+フレームワーク	Next.js (App Router)	最新	AI SDKとの統合が最も成熟
+言語	TypeScript	5.x	型安全。AIが最も得意な言語
+AI統合	AI SDK (Vercel)	v6+	useChat/streamText/multi-step tool callingを抽象化
+LLMプロバイダー	@ai-sdk/google	最新	Gemini 3 Flash用。google.tools.googleSearch等のビルトインツール対応
+UI	Tailwind CSS v4	最新	AI生成コードとの相性が最良
+Markdownレンダリング	react-markdown + remark-gfm	最新	チャット表示用
+コードハイライト	rehype-highlight or Shiki	最新	コードブロックの構文色分け
+ローカルDB	Dexie.js (IndexedDB wrapper)	最新	会話履歴・長期記憶の永続化。サーバーDB不要
+デプロイ	Vercel	Hobby (無料)	Next.jsとの最高の統合
+3. プロジェクトディレクトリ構成
+ultimate-chat/
+├── app/
+│   ├── layout.tsx                    # ルートレイアウト
+│   ├── page.tsx                      # メインチャットUI
+│   ├── globals.css                   # Tailwind CSS
+│   └── api/
+│       └── chat/
+│           └── route.ts              # メインAPI Route（オーケストレーション）
+│
+├── components/
+│   ├── ChatWindow.tsx                # チャット全体のコンテナ
+│   ├── MessageBubble.tsx             # 個別メッセージ表示（Markdown対応）
+│   ├── MessageParts.tsx              # テキスト/画像/ファイル/ソース引用の表示
+│   ├── InputArea.tsx                 # 入力欄 + ファイル添付 + モード切替
+│   ├── FileUpload.tsx                # ファイルアップロードコンポーネント
+│   ├── SourceCitation.tsx            # 検索ソースの引用表示
+│   ├── ThinkingIndicator.tsx         # 思考中・検索中のインジケータ
+│   ├── Sidebar.tsx                   # 会話履歴一覧サイドバー
+│   ├── SettingsPanel.tsx             # ユーザー設定パネル
+│   └── CodeBlock.tsx                 # コードブロック（コピーボタン付き）
+│
+├── lib/
+│   ├── orchestrator.ts               # オーケストレーション層のメインロジック
+│   ├── prompt-builder.ts             # プロンプト動的構築エンジン
+│   ├── context-manager.ts            # 短期/中期/長期コンテキスト管理
+│   ├── mode-detector.ts              # 自動モード判定ロジック
+│   ├── tools/
+│   │   ├── deep-research.ts          # 多段階リサーチツール
+│   │   ├── analyze-file.ts           # ファイル深層解析ツール
+│   │   └── index.ts                  # ツール統合エクスポート
+│   └── db/
+│       ├── schema.ts                 # Dexie.js DBスキーマ定義
+│       ├── conversations.ts          # 会話CRUD操作
+│       └── preferences.ts            # ユーザー設定CRUD操作
+│
+├── prompts/                          # ★ 全プロンプト独立ファイル
+│   ├── _index.ts                     # ★ プロンプトインデックス（辞書）
+│   ├── system-base.ts                # 基本人格・ルール
+│   ├── tool-usage.ts                 # ツール使用ガイドライン
+│   ├── mode-general.ts               # 一般会話モード
+│   ├── mode-research.ts              # リサーチモード
+│   ├── mode-coding.ts                # コーディングモード
+│   ├── file-analysis.ts              # ファイル解析指示
+│   ├── context-summary.ts            # 会話要約指示
+│   ├── quality-check.ts              # 回答品質チェック指示
+│   ├── error-recovery.ts             # エラーリカバリー指示
+│   ├── intent-classification.ts      # 意図分類指示
+│   └── deep-research-planner.ts      # リサーチ計画立案指示
+│
+├── types/
+│   └── index.ts                      # 全型定義
+│
+├── .env.local                        # 環境変数（APIキー）
+├── package.json
+├── tsconfig.json
+├── next.config.ts
+└── tailwind.config.ts
+4. プロンプト設計（全12ファイル + インデックス）
+4-0. プロンプトインデックス: prompts/_index.ts
+Copy/**
+ * ★ プロンプトインデックス（辞書）
+ *
+ * 全プロンプトの参照箇所・内容・使用タイミングを一元管理する。
+ * プロンプトを編集・追加する場合は、このファイルも必ず更新すること。
+ */
+
+import { SYSTEM_BASE_PROMPT } from './system-base';
+import { TOOL_USAGE_PROMPT } from './tool-usage';
+import { MODE_GENERAL_PROMPT } from './mode-general';
+import { MODE_RESEARCH_PROMPT } from './mode-research';
+import { MODE_CODING_PROMPT } from './mode-coding';
+import { FILE_ANALYSIS_PROMPT } from './file-analysis';
+import { CONTEXT_SUMMARY_PROMPT } from './context-summary';
+import { QUALITY_CHECK_PROMPT } from './quality-check';
+import { ERROR_RECOVERY_PROMPT } from './error-recovery';
+import { INTENT_CLASSIFICATION_PROMPT } from './intent-classification';
+import { DEEP_RESEARCH_PLANNER_PROMPT } from './deep-research-planner';
+
+/**
+ * プロンプトレジストリ
+ * 各プロンプトのメタ情報と実体を保持
+ */
+export const PROMPT_REGISTRY = {
+  'system-base': {
+    file: 'prompts/system-base.ts',
+    description: 'AIの基本人格、言語設定、回答スタイル、誠実さのルール',
+    usedIn: 'すべてのリクエストに必ず付与',
+    prompt: SYSTEM_BASE_PROMPT,
+  },
+  'tool-usage': {
+    file: 'prompts/tool-usage.ts',
+    description: 'Google Search / URL Context の使用判断基準とルール',
+    usedIn: 'すべてのリクエストにsystem-baseと結合して付与',
+    prompt: TOOL_USAGE_PROMPT,
+  },
+  'mode-general': {
+    file: 'prompts/mode-general.ts',
+    description: 'デフォルトの一般会話モード。質問の複雑さに応じて回答調整',
+    usedIn: 'モード判定が「一般」の場合',
+    prompt: MODE_GENERAL_PROMPT,
+  },
+  'mode-research': {
+    file: 'prompts/mode-research.ts',
+    description: 'リサーチ特化。複数ソース統合、網羅性重視、出典明記',
+    usedIn: 'モード判定が「リサーチ」の場合',
+    prompt: MODE_RESEARCH_PROMPT,
+  },
+  'mode-coding': {
+    file: 'prompts/mode-coding.ts',
+    description: 'コーディング特化。完全動作コード、ファイルパス明記、最新バージョン確認',
+    usedIn: 'モード判定が「コーディング」の場合',
+    prompt: MODE_CODING_PROMPT,
+  },
+  'file-analysis': {
+    file: 'prompts/file-analysis.ts',
+    description: 'ファイル添付時のコンテキスト付与テンプレート',
+    usedIn: 'ユーザーがファイルを添付した場合に、メッセージ前に注入',
+    prompt: FILE_ANALYSIS_PROMPT,
+  },
+  'context-summary': {
+    file: 'prompts/context-summary.ts',
+    description: '古い会話履歴を要約して中期記憶に変換するための指示',
+    usedIn: '会話が20ターンを超えた場合にバックグラウンドで実行',
+    prompt: CONTEXT_SUMMARY_PROMPT,
+  },
+  'quality-check': {
+    file: 'prompts/quality-check.ts',
+    description: '生成された回答の品質を自己評価し、不足があれば追加検索を指示',
+    usedIn: 'リサーチモードの最終ステップで実行',
+    prompt: QUALITY_CHECK_PROMPT,
+  },
+  'error-recovery': {
+    file: 'prompts/error-recovery.ts',
+    description: '検索ツール障害時のフォールバック回答ルール',
+    usedIn: 'Google Search / URL Context がエラーを返した場合',
+    prompt: ERROR_RECOVERY_PROMPT,
+  },
+  'intent-classification': {
+    file: 'prompts/intent-classification.ts',
+    description: 'ユーザーの質問意図を分類し、最適なモードとツールを決定',
+    usedIn: 'オーケストレーション層の最初のステップで実行',
+    prompt: INTENT_CLASSIFICATION_PROMPT,
+  },
+  'deep-research-planner': {
+    file: 'prompts/deep-research-planner.ts',
+    description: 'リサーチ時に検索戦略（クエリ複数生成、深掘り判定）を立案',
+    usedIn: 'リサーチモードでmulti-step tool callingの前に実行',
+    prompt: DEEP_RESEARCH_PLANNER_PROMPT,
+  },
+} as const;
+
+/** 全プロンプトをID指定で取得 */
+export function getPrompt(id: keyof typeof PROMPT_REGISTRY): string {
+  return PROMPT_REGISTRY[id].prompt;
+}
+
+/** モード名からモードプロンプトを取得 */
+export const MODE_PROMPTS = {
+  general: MODE_GENERAL_PROMPT,
+  research: MODE_RESEARCH_PROMPT,
+  coding: MODE_CODING_PROMPT,
+} as const;
+
+export type ChatMode = keyof typeof MODE_PROMPTS;
+Copy
+4-1. prompts/system-base.ts
+Copyexport const SYSTEM_BASE_PROMPT = `
+あなたはユーザー専用の最高品質AIアシスタントです。
+
+## 基本姿勢
+- 正確性を最優先する。不確かな情報は「不確かです」と明示する
+- 推測を事実として述べない。確信度が低い場合は「〜の可能性があります」と表現する
+- 日本語で応答する。ただしコード・技術用語・固有名詞は英語のまま使う
+- 質問が曖昧な場合は推測で答えず、確認を取る
+- 冗長な前置き（「もちろんです！」「素晴らしい質問ですね！」）を一切使わない
+
+## 回答フォーマット
+- 簡単な質問（事実確認・Yes/No）→ 1〜3文で簡潔に
+- 中程度の質問（説明・比較）→ 段落を分けて構造化
+- 複雑な質問（リサーチ・設計・分析）→ 見出し・段落・コードブロックを駆使して網羅的に
+- コードを含む回答では言語名を明示し、コメントは日本語で書く
+- リサーチ回答では情報源を必ず明記する
+
+## 言語ルール
+- 主言語: 日本語
+- 技術用語: 英語（API, SDK, Framework, Repository 等はそのまま使う）
+- コード内コメント: 日本語
+- ユーザーが英語で質問した場合: 英語で回答する
+
+## 品質基準
+- 回答は常に最新かつ正確な情報に基づく
+- 古い情報しか持たない場合は検索ツールで最新情報を取得する
+- 一次情報（公式ドキュメント、公式ブログ）を優先する
+- 矛盾する情報がある場合は、両方の見解を提示した上で推奨を述べる
+
+## 現在の日時
+{current_date}
+
+## 制約
+- 検索結果がない場合は「見つかりませんでした」と正直に伝える
+- ユーザーの意図を汲み取り、聞かれていないことまで過度に説明しない
+- 自分の知識カットオフ以降の情報は、検索で確認してから回答する
+`.trim();
+Copy
+4-2. prompts/tool-usage.ts
+Copyexport const TOOL_USAGE_PROMPT = `
+## ツールの使用ガイドライン
+
+### Google Search（Web検索）
+以下のいずれかに該当する場合、必ずGoogle検索を使用すること:
+- リアルタイム性が必要（ニュース、株価、天気、スポーツ結果）
+- 最新の技術情報・ライブラリバージョン・APIの変更点
+- 自分の知識に確信が持てない事実の確認
+- ユーザーが「調べて」「最新の」「現在の」と明示した場合
+- 特定のURL・サービス・製品の現在の状態
+- 2025年1月以降に起きた出来事
+
+検索クエリの作成ルール:
+- 簡潔にする（20語以内）
+- 日本語の質問でも、技術トピックは英語で検索する方が精度が高い
+- 具体的なキーワードを使う（「Next.js App Router dynamic routes」のように）
+- 1つの質問に対して複数の検索クエリを使い分けてよい
+- 曖昧なクエリよりも、具体的な複数クエリの方が良い
+
+### URL Context（URL読み取り）
+以下の場合にURL読み取りを使用すること:
+- ユーザーがURLを共有した場合
+- 検索結果から特定のページの詳細確認が必要な場合
+- 公式ドキュメントの正確な内容を引用する必要がある場合
+- 技術記事やブログの内容を要約・分析する場合
+
+URL読み取りの制約:
+- 1リクエストあたり最大20 URL
+- ペイウォールやログイン必須のページは読めない
+- YouTube動画は対象外
+
+### ツールを使わない場合
+- 一般常識・基礎知識・言語の文法説明など
+- ユーザーとの雑談・感想・意見交換
+- 自分の知識で十分に正確に回答できる場合
+`.trim();
+Copy
+4-3. prompts/mode-general.ts
+Copyexport const MODE_GENERAL_PROMPT = `
+## モード: 一般会話
+通常の会話モードで動作しています。
+
+- 質問の複雑さに応じて回答の長さを自動調整する
+- 簡単な質問には1〜3文で端的に答える
+- 会話の流れに合った自然なトーンで応答する
+- 必要に応じてリサーチモードやコーディングモードの振る舞いに自動で切り替えてよい
+- ユーザーが深掘りを求めたら、躊躇なく詳細に展開する
+`.trim();
+4-4. prompts/mode-research.ts
+Copyexport const MODE_RESEARCH_PROMPT = `
+## モード: リサーチ
+あなたは今、プロフェッショナルリサーチアシスタントとして動作しています。
+このモードではGensparkレベルの網羅的調査を行います。
+
+### 調査プロセス
+1. 質問を分析し、調査すべき複数の側面を特定する
+2. 各側面に対して適切な検索クエリを生成する（英語・日本語の両方を活用）
+3. 検索結果を取得し、信頼性の高いソースを特定する
+4. 重要なページはURL Contextで詳細を読み取る
+5. 情報が不十分な場合は追加検索を行う
+6. 全情報を統合し、構造化された回答を生成する
+
+### 回答ルール
+- 複数のソースから情報を収集し、総合的な回答を構築する
+- 情報の鮮度と信頼性を重視する（公式ドキュメント > ブログ > フォーラム）
+- 矛盾する情報がある場合は両方の見解を提示し、どちらが信頼できるか根拠を示す
+- 回答の最後に「参照ソース」セクションを設け、使用したソースをリストする
+- 一次情報（公式ドキュメント、公式発表）を最優先する
+- 網羅性を重視する。長文でも構わないので、漏れなく回答する
+- 情報に日付がある場合は明記する
+- 未確認の情報は「未確認」と明記する
+
+### 品質基準
+- 3つ以上の独立したソースで裏取りできた情報を「確認済み」とする
+- 1つのソースのみの情報は「単一ソース」と注記する
+- 検索で見つからなかった情報は正直に「見つかりませんでした」と述べる
+`.trim();
+4-5. prompts/mode-coding.ts
+Copyexport const MODE_CODING_PROMPT = `
+## モード: コーディング
+あなたは今、シニアフルスタックエンジニアとして動作しています。
+
+### コード生成ルール
+- コードは完全に動作する状態で提供する。省略（... や // 残りのコード など）は絶対にしない
+- 各コードブロックの先頭にファイルパスをコメントで明記する
+- 変更を加える場合は、変更前と変更後の差分を明確にする
+- エラーが起きそうな箇所にはtry-catchやバリデーションを含める
+- 使用するパッケージのバージョンは最新を検索で確認する
+- インストールコマンド（npm install や pnpm add）を含める
+- 実装の選択理由を簡潔に説明する（なぜその方法を選んだか）
+
+### コードスタイル
+- TypeScript推奨（ユーザーの指定がない場合）
+- コード内コメントは日本語
+- 命名規則は一般的な慣習に従う（camelCase for variables, PascalCase for components）
+- 関数には簡潔なJSDocコメントを付ける
+
+### バイブコーディング対応
+- ユーザーが「〜を作って」「〜を追加して」と言った場合は、コード全体を出力する
+- 「修正して」「直して」の場合は、該当箇所のみ＋前後の文脈を出力する
+- 新しいファイルを作る場合は、ファイル作成の手順も含める
+- 既存のコードベースに追加する場合は、どこに配置するか明記する
+
+### 品質チェック
+- TypeScriptの型エラーがないか確認する
+- import文が正しいか確認する
+- 環境変数の参照が正しいか確認する
+- edge caseの処理が含まれているか確認する
+`.trim();
+Copy
+4-6. prompts/file-analysis.ts
+Copyexport const FILE_ANALYSIS_PROMPT = `
+## 添付ファイル処理ガイドライン
+
+ユーザーがファイルを添付しています。以下のルールで対応してください。
+
+### 画像ファイルの場合
+- 画像の内容を詳細に読み取る
+- テキストが含まれる場合はOCR的に抽出する
+- 図表やグラフの場合はデータを解釈する
+- スクリーンショットの場合は画面の状態を説明する
+- エラー画面の場合は原因と解決策を提示する
+
+### コードファイルの場合
+- コードの言語を特定する
+- コードの目的と構造を把握する
+- バグやアンチパターンがあれば指摘する
+- ユーザーの質問に応じて改善提案を行う
+
+### PDFの場合
+- ドキュメントの種類と概要を把握する
+- ユーザーの質問に関連する箇所を抽出して回答する
+- 全体の要約が求められた場合は構造的に要約する
+
+### テキストファイルの場合
+- 内容を読み取り、ユーザーの質問文脈に沿って回答する
+- ログファイルの場合はエラーパターンを分析する
+- 設定ファイルの場合は各設定の意味を説明する
+
+### 共通ルール
+- ファイルの内容について特に指示がない場合は、概要を述べた上でユーザーの質問に答える
+- 大きなファイルの場合は重要な部分にフォーカスする
+- ファイルの内容を回答に引用する際は、該当箇所を明記する
+`.trim();
+Copy
+4-7. prompts/context-summary.ts
+Copyexport const CONTEXT_SUMMARY_PROMPT = `
+以下の会話履歴を要約してください。
+この要約はAIアシスタントが以降の会話で参照するコンテキストとして使用されます。
+
+## 要約ルール
+- 重要度の高い情報を優先的に保持する
+- 以下のカテゴリに分けて要約する:
+
+### 保持すべき情報（必ず残す）
+- 決定事項（技術選定、設計方針、合意内容）
+- ユーザーが共有したコード、URL、ファイルの内容の要旨
+- ユーザーの好み・スタイル（回答形式、言語の好み、技術スタック）
+- 現在進行中のタスクやプロジェクトの状態
+- エラーや問題の解決履歴
+
+### 圧縮してよい情報
+- 雑談・挨拶
+- AIの冗長な説明部分
+- 試行錯誤の途中経過（最終結果のみ残す）
+
+## 出力形式
+以下のJSON形式で出力してください:
+{
+  "projectContext": "進行中のプロジェクトや作業の概要",
+  "decisions": ["決定事項1", "決定事項2"],
+  "userPreferences": ["好み1", "好み2"],
+  "keyInformation": ["重要情報1", "重要情報2"],
+  "currentState": "現在の状態・次にやるべきこと"
+}
+
+## 会話履歴:
+{conversation_history}
+`.trim();
+Copy
+4-8. prompts/quality-check.ts
+Copyexport const QUALITY_CHECK_PROMPT = `
+あなたは回答品質を検証するレビュアーです。
+以下の質問と回答を評価し、不足があれば具体的に指摘してください。
+
+## 評価基準
+
+### 正確性 (1-5)
+- 事実誤認がないか
+- 情報が最新か
+- 出典が信頼できるか
+
+### 網羅性 (1-5)
+- 質問のすべての側面に答えているか
+- 重要な情報が漏れていないか
+- 関連する補足情報が含まれているか
+
+### 実用性 (1-5)
+- ユーザーがすぐに行動できる形か
+- コードが完全に動作する状態か
+- 手順が明確か
+
+## 出力形式
+以下のJSON形式で出力してください:
+{
+  "accuracy": { "score": 数値, "issues": ["問題点"] },
+  "completeness": { "score": 数値, "gaps": ["不足している情報"] },
+  "usefulness": { "score": 数値, "improvements": ["改善提案"] },
+  "overallScore": 数値,
+  "needsAdditionalSearch": boolean,
+  "additionalSearchQueries": ["追加で検索すべきクエリ"]
+}
+
+## 質問:
+{question}
+
+## 回答:
+{answer}
+`.trim();
+Copy
+4-9. prompts/error-recovery.ts
+Copyexport const ERROR_RECOVERY_PROMPT = `
+## 障害発生時の対応
+
+検索ツールまたはURL読み取りツールが利用できない状態です。
+以下のルールで回答してください。
+
+### 回答ルール
+- 自分の知識のみで回答する
+- 知識カットオフ（2025年1月）以降の情報は「検索で確認できないため、最新情報は不明です」と伝える
+- 古い可能性がある情報には「※この情報は最新でない可能性があります」と注記する
+- 最新情報が必須の質問には「現在検索機能が一時的に利用できません。後ほどお試しください」と案内する
+
+### 注意
+- 古い情報を最新のものとして提示しない
+- 推測で情報を補完しない
+- ツール復旧後に再度質問するよう案内する
+`.trim();
+4-10. prompts/intent-classification.ts
+Copyexport const INTENT_CLASSIFICATION_PROMPT = `
+ユーザーのメッセージを分析し、最適な対応方法を判定してください。
+
+## 分類カテゴリ
+
+### mode（対応モード）
+- "general": 雑談、簡単な質問、意見を求められた場合
+- "research": 調査、比較、最新情報の確認、事実確認が必要な場合
+- "coding": コード生成、バグ修正、技術実装の質問の場合
+
+### needsSearch（検索の必要性）
+- true: 最新情報、事実確認、未知のトピックの場合
+- false: 一般知識、会話の続き、明確な回答が可能な場合
+
+### needsUrlContext（URL読み取りの必要性）
+- true: ユーザーがURLを共有した場合、特定のページの詳細が必要な場合
+- false: URL関連の要求がない場合
+
+### thinkingLevel（推論の深さ）
+- "minimal": 挨拶、簡単な事実確認
+- "low": 一般的な質問、短い回答で済む場合
+- "medium": 比較、分析、中程度の複雑さの質問
+- "high": 複雑な推論、設計、多面的な分析が必要な場合
+
+## 出力形式
+以下のJSON形式で出力してください:
+{
+  "mode": "general" | "research" | "coding",
+  "needsSearch": boolean,
+  "needsUrlContext": boolean,
+  "thinkingLevel": "minimal" | "low" | "medium" | "high",
+  "reasoning": "判定理由の簡潔な説明"
+}
+
+## ユーザーのメッセージ:
+{user_message}
+
+## 会話の直近コンテキスト:
+{recent_context}
+`.trim();
+Copy
+4-11. prompts/deep-research-planner.ts
+Copyexport const DEEP_RESEARCH_PLANNER_PROMPT = `
+あなたはリサーチ戦略の立案者です。
+ユーザーの質問に対して、最も効果的な調査計画を立ててください。
+
+## 立案ルール
+
+### 検索クエリの設計
+- 1つの質問に対して3〜5つの検索クエリを生成する
+- 異なる角度からアプローチする（公式情報、比較記事、実装例、トラブルシューティング）
+- 英語と日本語の両方のクエリを含める（技術トピックの場合）
+- 具体的で狭いクエリを優先する（広すぎるクエリは避ける）
+
+### 深掘り判断
+- 検索結果の中で、公式ドキュメントやGitHubリポジトリが見つかった場合はURL Contextで詳細を読む
+- 情報に矛盾がある場合は追加検索で裏取りする
+- 初回検索で十分な情報が得られない場合は、クエリを変えて再検索する
+
+### 優先順位
+1. 公式ドキュメント・公式ブログ
+2. GitHubリポジトリ（README、Issues、Discussions）
+3. 信頼性の高い技術メディア
+4. Stack Overflow・Reddit等のコミュニティ
+5. 個人ブログ（最新の実装例として参考にする）
+
+## 出力形式
+以下のJSON形式で出力してください:
+{
+  "searchQueries": [
+    { "query": "検索クエリ", "purpose": "このクエリで何を調べるか", "language": "en" | "ja" }
+  ],
+  "urlsToAnalyze": ["事前に読むべきURLがあれば"],
+  "expectedSources": "期待されるソースの種類",
+  "fallbackStrategy": "初回検索で不十分だった場合の代替戦略"
+}
+
+## ユーザーの質問:
+{user_question}
+`.trim();
+Copy
+5. オーケストレーション層 詳細設計
+これがこのプロジェクトの心臓部。Gensparkレベルの品質を実現するための多段階処理フローを定義する。
+
+5-1. メインフロー
+ユーザーメッセージ受信
+       │
+       ▼
+┌──────────────────┐
+│ Step 1: 意図分類  │ ← intent-classification.ts
+│ (軽量Gemini呼び出し) │   thinkingLevel: "minimal"
+└────────┬─────────┘
+         │ mode, needsSearch, thinkingLevel を取得
+         ▼
+┌──────────────────┐
+│ Step 2: プロンプト │ ← prompt-builder.ts
+│ 動的構築          │   system-base + tool-usage + mode-xxx を結合
+│                  │   長期記憶・中期記憶を注入
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────────────┐
+│ Step 3: mode分岐          │
+│                          │
+│  [general] → 直接回答     │ streamText (stopWhen: stepCountIs(5))
+│                          │   google_search + url_context を tools に含める
+│                          │   Geminiが必要に応じて自動で検索
+│                          │
+│  [research] → Step 3R    │ 多段階リサーチフロー（下記参照）
+│                          │
+│  [coding] → 直接回答      │ streamText (stopWhen: stepCountIs(8))
+│     + 最新バージョン検索   │   google_search で最新バージョン確認
+│                          │
+└────────┬─────────────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Step 4: ストリーム │ → toUIMessageStreamResponse()
+│ レスポンス返却     │   クライアントにリアルタイム配信
+└──────────────────┘
+5-2. リサーチモード詳細フロー (Step 3R)
+┌─────────────────────────┐
+│ Step 3R-1: リサーチ計画   │ ← deep-research-planner.ts
+│ (Gemini呼び出し)         │   generateObject() でJSON出力
+│ 検索クエリ3〜5つ生成      │   thinkingLevel: "high"
+└────────┬────────────────┘
+         │ searchQueries, urlsToAnalyze
+         ▼
+┌─────────────────────────┐
+│ Step 3R-2: メイン回答生成  │ streamText()
+│                         │   tools:
+│ google_search +          │     google_search（Geminiが計画に基づき検索）
+│ url_context を有効化      │     url_context（公式ドキュメントの詳細読み取り）
+│                         │   stopWhen: stepCountIs(10)
+│ Geminiが自律的に:         │   thinkingLevel: "high"
+│ - 計画に基づき複数回検索   │
+│ - 重要なURLの詳細を読む   │
+│ - 情報を統合して回答生成   │
+└────────┬────────────────┘
+         │
+         ▼
+┌─────────────────────────┐
+│ Step 3R-3: 品質チェック   │ ← quality-check.ts
+│ (オプション)             │   generateObject() でJSON出力
+│                         │   回答の正確性・網羅性を自己評価
+│ needsAdditionalSearch    │
+│ = true の場合            │
+│   → Step 3R-2 に戻る     │
+│   (追加クエリで再検索)    │
+│                         │
+│ = false の場合           │
+│   → 最終回答を返却       │
+└─────────────────────────┘
+5-3. コンテキスト管理フロー
+リクエスト受信時のコンテキスト組み立て:
+
+┌─────────────────────────────────────────┐
+│ 長期記憶 (IndexedDB → preferences)       │
+│ - ユーザーの好み、よく使う技術スタック     │
+│ - プロジェクト情報                        │
+│ → システムプロンプトに注入                │
+├─────────────────────────────────────────┤
+│ 中期記憶 (IndexedDB → conversation.summary)│
+│ - 20ターンより前の会話の要約              │
+│ → システムプロンプトの「会話コンテキスト」に注入│
+├─────────────────────────────────────────┤
+│ 短期記憶 (リクエストbody → messages)       │
+│ - 直近20ターンの全文                      │
+│ → messages配列としてそのまま送信          │
+└─────────────────────────────────────────┘
+
+会話ターン数が閾値を超えた場合:
+1. 古いメッセージをcontext-summary.tsで要約（バックグラウンド）
+2. 要約結果をIndexedDBのconversation.summaryに保存
+3. 次のリクエストから中期記憶として活用
+6. 実装ロードマップ（Phase 1〜7）
+Phase 1: プロジェクト初期セットアップ
+ゴール: Next.jsプロジェクトが起動し、基本的なページが表示される
+
+手順:
+
+Step 1-1. Next.jsプロジェクト作成
+
+Copypnpm create next-app@latest ultimate-chat --typescript --tailwind --eslint --app --src=false
+cd ultimate-chat
+Step 1-2. 必要パッケージのインストール
+
+Copy# AI SDK本体 + Google provider
+pnpm add ai @ai-sdk/google @ai-sdk/react
+
+# UI関連
+pnpm add react-markdown remark-gfm rehype-highlight
+
+# ローカルDB
+pnpm add dexie
+
+# ユーティリティ
+pnpm add zod
+Step 1-3. 環境変数の設定
+
+Copy# .env.local を作成
+echo 'GOOGLE_GENERATIVE_AI_API_KEY=your_api_key_here' > .env.local
+APIキーの取得先: https://aistudio.google.com/apikey
+
+Step 1-4. ディレクトリ構造の作成
+
+Copymkdir -p components lib/tools lib/db prompts types
+Step 1-5. 全プロンプトファイルを配置。上記セクション4のコードをそれぞれのファイルに書き込む。合計12ファイル＋1インデックスファイル。
+
+Step 1-6. 型定義ファイル types/index.ts を作成
+
+Copyexport type ChatMode = 'general' | 'research' | 'coding';
+export type ThinkingLevel = 'minimal' | 'low' | 'medium' | 'high';
+
+export interface IntentClassification {
+  mode: ChatMode;
+  needsSearch: boolean;
+  needsUrlContext: boolean;
+  thinkingLevel: ThinkingLevel;
+  reasoning: string;
+}
+
+export interface ResearchPlan {
+  searchQueries: Array<{
+    query: string;
+    purpose: string;
+    language: 'en' | 'ja';
+  }>;
+  urlsToAnalyze: string[];
+  expectedSources: string;
+  fallbackStrategy: string;
+}
+
+export interface QualityCheckResult {
+  accuracy: { score: number; issues: string[] };
+  completeness: { score: number; gaps: string[] };
+  usefulness: { score: number; improvements: string[] };
+  overallScore: number;
+  needsAdditionalSearch: boolean;
+  additionalSearchQueries: string[];
+}
+
+export interface ConversationSummary {
+  projectContext: string;
+  decisions: string[];
+  userPreferences: string[];
+  keyInformation: string[];
+  currentState: string;
+}
+
+export interface UserPreferences {
+  id: string;
+  language: string;
+  codingStyle: string;
+  preferredStack: string[];
+  customInstructions: string;
+  updatedAt: Date;
+}
+
+export interface Conversation {
+  id: string;
+  title: string;
+  messages: any[];      // AI SDK UIMessage[]
+  summary?: ConversationSummary;
+  mode: ChatMode;
+  createdAt: Date;
+  updatedAt: Date;
+}
+Copy
+Step 1-7. 起動確認
+
+Copypnpm dev
+# → http://localhost:3000 でデフォルトページが表示されることを確認
+Phase 2: バックエンドAPI（基本チャット + 検索）
+ゴール: Gemini 3 Flashとのストリーミング通信、Google Search、URL Contextが動作する
+
+Step 2-1. lib/prompt-builder.ts を実装 — プロンプト動的構築エンジン
+
+Copyimport { SYSTEM_BASE_PROMPT } from '@/prompts/system-base';
+import { TOOL_USAGE_PROMPT } from '@/prompts/tool-usage';
+import { MODE_PROMPTS, type ChatMode } from '@/prompts/_index';
+import type { ConversationSummary } from '@/types';
+
+export function buildSystemPrompt(params: {
+  mode: ChatMode;
+  longTermMemory?: string;
+  midTermSummary?: ConversationSummary | null;
+}): string {
+  const { mode, longTermMemory, midTermSummary } = params;
+
+  const parts: string[] = [
+    SYSTEM_BASE_PROMPT.replace('{current_date}', new Date().toISOString()),
+    TOOL_USAGE_PROMPT,
+    MODE_PROMPTS[mode],
+  ];
+
+  if (longTermMemory) {
+    parts.push(`## ユーザー設定\n${longTermMemory}`);
+  }
+
+  if (midTermSummary) {
+    parts.push(`## これまでの会話コンテキスト
+プロジェクト: ${midTermSummary.projectContext}
+決定事項: ${midTermSummary.decisions.join(', ')}
+現在の状態: ${midTermSummary.currentState}`);
+  }
+
+  return parts.join('\n\n');
+}
+Copy
+Step 2-2. app/api/chat/route.ts を実装 — メインAPIルート
+
+Copyimport { streamText, convertToModelMessages, type UIMessage } from 'ai';
+import { google, type GoogleGenerativeAIProviderOptions } from '@ai-sdk/google';
+import { buildSystemPrompt } from '@/lib/prompt-builder';
+import type { ChatMode, ThinkingLevel } from '@/types';
+
+export const maxDuration = 60; // 長いリサーチに備えて60秒
+
+export async function POST(req: Request) {
+  const {
+    messages,
+    mode = 'general',
+    thinkingLevel = 'high',
+    longTermMemory,
+    midTermSummary,
+  }: {
+    messages: UIMessage[];
+    mode?: ChatMode;
+    thinkingLevel?: ThinkingLevel;
+    longTermMemory?: string;
+    midTermSummary?: any;
+  } = await req.json();
+
+  // システムプロンプト構築
+  const systemPrompt = buildSystemPrompt({
+    mode,
+    longTermMemory,
+    midTermSummary,
+  });
+
+  // ストリーミングレスポンス生成
+  const result = streamText({
+    model: google('gemini-3-flash-preview'),
+    system: systemPrompt,
+    messages: await convertToModelMessages(messages),
+    tools: {
+      google_search: google.tools.googleSearch({}),
+      url_context: google.tools.urlContext({}),
+    },
+    // multi-step: Geminiが検索→結果を読み→回答を生成 を最大10ステップ
+    stopWhen: stepCountIs(mode === 'research' ? 10 : 5),
+    providerOptions: {
+      google: {
+        thinkingConfig: {
+          thinkingLevel: thinkingLevel,
+          includeThoughts: true,
+        },
+      } satisfies GoogleGenerativeAIProviderOptions,
+    },
+    onStepFinish({ text, toolCalls, toolResults, finishReason, usage }) {
+      // ステップごとのログ（デバッグ用）
+      console.log('[Step]', { finishReason, toolCalls: toolCalls?.length, usage });
+    },
+  });
+
+  return result.toUIMessageStreamResponse();
+}
+
+// AI SDKのstepCountIs をインポートするか、なければ自前で定義
+import { stepCountIs } from 'ai';
+Copy
+Step 2-3. 動作確認（curlで直接テスト）
+
+Copycurl -X POST http://localhost:3000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{"id":"1","role":"user","parts":[{"type":"text","text":"今日の東京の天気を教えて"}]}],
+    "mode": "general",
+    "thinkingLevel": "low"
+  }'
+Phase 3: フロントエンド（チャットUI基盤）
+ゴール: このchat.anthropic.comと同等のチャットUIが動作する
+
+Step 3-1. app/page.tsx — メインチャットページ。useChat hookを使用したチャットUI。ファイル添付、モード切替、ストリーミング表示を含む。
+
+Step 3-2. components/ChatWindow.tsx — メッセージリストの表示コンテナ。自動スクロール、ローディング表示。
+
+Step 3-3. components/MessageBubble.tsx — 個別メッセージの表示。react-markdownでMarkdownレンダリング。rehype-highlightでコードブロックのシンタックスハイライト。
+
+Step 3-4. components/MessageParts.tsx — AI SDKのparts配列を解析し、テキスト/画像/ファイル/ソース引用を適切にレンダリングするコンポーネント。
+
+Step 3-5. components/InputArea.tsx — テキスト入力、ファイル添付ボタン、モード切替トグル、送信ボタン。Ctrl+Enterで送信。
+
+Step 3-6. components/FileUpload.tsx — ドラッグ&ドロップ対応ファイルアップロード。画像プレビュー。ファイルをdata URLに変換してsendMessageに含める。
+
+Step 3-7. components/SourceCitation.tsx — Google SearchのgroundingMetadataを解析し、出典リンクをインライン表示するコンポーネント。
+
+Step 3-8. components/CodeBlock.tsx — コードブロックにコピーボタンと言語ラベルを付加するコンポーネント。
+
+Phase 4: オーケストレーション層（意図分析 + リサーチ計画）
+ゴール: ユーザーの質問を自動分析し、最適なモード・検索戦略を自律決定する
+
+Step 4-1. lib/mode-detector.ts — 意図分類の実装。Gemini 3 Flashにintent-classification.tsプロンプトを投げ、generateObjectでJSONを取得。thinkingLevel: "minimal"で高速に判定。
+
+Step 4-2. lib/orchestrator.ts — オーケストレーション層のメインロジック。意図分類結果に基づいてプロンプトを動的構築し、streamTextのパラメータを最適化。リサーチモードの場合はdeep-research-planner.tsで計画を立て、その計画をシステムプロンプトに注入してからstreamTextを実行。
+
+Step 4-3. app/api/chat/route.ts を改修 — orchestrator.tsを呼び出す形に書き換え。意図分類→プロンプト構築→streamTextの一連のフローを統合。
+
+Step 4-4. lib/tools/deep-research.ts — リサーチ計画立案をカスタムツールとして定義。AI SDKのtool()で定義し、Geminiが自律的にリサーチ計画を参照できるようにする。
+
+Phase 5: コンテキスト管理（記憶の永続化）
+ゴール: 会話履歴の永続化、長期記憶、中期記憶（要約）が動作する
+
+Step 5-1. lib/db/schema.ts — Dexie.jsのDBスキーマ定義。conversations、preferencesの2テーブル。
+
+Copyimport Dexie, { type EntityTable } from 'dexie';
+import type { Conversation, UserPreferences } from '@/types';
+
+const db = new Dexie('UltimateChatDB') as Dexie & {
+  conversations: EntityTable<Conversation, 'id'>;
+  preferences: EntityTable<UserPreferences, 'id'>;
+};
+
+db.version(1).stores({
+  conversations: 'id, title, createdAt, updatedAt',
+  preferences: 'id, updatedAt',
+});
+
+export { db };
+Step 5-2. lib/db/conversations.ts — 会話のCRUD。作成、メッセージ追加、一覧取得、削除、タイトル自動生成。
+
+Step 5-3. lib/db/preferences.ts — ユーザー設定のCRUD。長期記憶として保存・読み込み。
+
+Step 5-4. lib/context-manager.ts — 短期/中期/長期のコンテキスト統合ロジック。会話が20ターンを超えたら古いメッセージをcontext-summary.tsで要約し、summaryフィールドに保存。次回リクエストからはsummaryをシステムプロンプトに注入。
+
+Step 5-5. components/Sidebar.tsx — 過去の会話一覧を表示するサイドバー。会話の切り替え、新規会話の作成、削除。
+
+Step 5-6. フロントエンドの改修 — page.tsxをSidebar、DBからの会話読み込み、会話の切り替えに対応させる。
+
+Phase 6: 品質向上（品質チェック + エラーリカバリー）
+ゴール: リサーチ結果の自動品質チェック、APIエラー時の自動復旧が動作する
+
+Step 6-1. lib/orchestrator.ts に品質チェックステップを追加 — リサーチモードの場合、streamTextの完了後にquality-check.tsプロンプトで品質評価を実行。overallScore < 3.5 の場合は追加検索を実行。
+
+Step 6-2. エラーリカバリーの実装 — API呼び出しにtry-catchを追加。ツールエラー時はerror-recovery.tsプロンプトに切り替えてフォールバック回答を生成。
+
+Step 6-3. リトライロジック — 一時的なAPIエラー（429, 503）の場合は指数バックオフでリトライ。
+
+Step 6-4. components/ThinkingIndicator.tsx — 検索中、URL読み取り中、品質チェック中など、各ステップの進捗をユーザーに表示。AI SDKのonStepFinishコールバックからステータスを伝達。
+
+Phase 7: UI磨き + デプロイ
+ゴール: 完成品としての品質。デプロイして実際に使える状態
+
+Step 7-1. レスポンシブ対応 — モバイルでもサイドバーがドロワーになり、チャットが正常表示される。
+
+Step 7-2. ダークモード — Tailwind CSSのdarkクラスで切り替え。
+
+Step 7-3. components/SettingsPanel.tsx — ユーザー設定UI。デフォルトモード、thinkingLevel、カスタムインストラクション、言語設定を変更可能に。これらはIndexedDBに保存され、長期記憶としてシステムプロンプトに注入される。
+
+Step 7-4. キーボードショートカット — Ctrl+Enter: 送信、Ctrl+N: 新規会話、Ctrl+/: サイドバー切替。
+
+Step 7-5. Vercelデプロイ
+
+Copy# Vercel CLIをインストール（未インストールの場合）
+pnpm add -g vercel
+
+# デプロイ
+vercel
+
+# 環境変数を設定
+vercel env add GOOGLE_GENERATIVE_AI_API_KEY
+Step 7-6. パフォーマンスチューニング — Context Caching の検討（長いシステムプロンプトを毎回送るコスト削減）。Gemini 3 Flashは暗黙キャッシュに対応しているため、システムプロンプトの先頭部分を固定すればキャッシュヒット率が上がる。
+
+Step 7-7. 最終テスト — 以下のシナリオで全機能テスト。
+
+テストケース:
+1. 一般会話: 「こんにちは」→ 短文回答
+2. リサーチ: 「Gemini 3 Flashの最新ベンチマーク結果を教えて」→ 検索→出典付き回答
+3. コーディング: 「Next.jsでダークモード切替を実装して」→ 完全なコード
+4. ファイル添付: 画像をアップロード→内容説明
+5. URL読み取り: URLを貼って「この記事を要約して」→ 要約
+6. 長い会話: 30ターン以上の会話→ 中期記憶が機能しコンテキストが保持される
+7. セッション跨ぎ: ブラウザを閉じて再開→ 会話履歴が残っている
+8. エラーケース: ネットワーク切断→ エラーリカバリーが動作
+7. 料金の見積もり
+Gemini 3 Flash (Paid Tier):
+  入力: $0.50 / 1M tokens
+  出力: $3.00 / 1M tokens (思考トークン含む)
+  Google Search: 月5,000プロンプト無料、以降 $14 / 1,000クエリ
+
+日常的な使用量の目安（ヘビーユーザー）:
+  1日あたり: 30〜50回の質問
+  1質問あたり: 入力約2,000 tokens、出力約3,000 tokens
+  月間: 約1,500質問 × 5,000 tokens = 7.5M tokens
+
+月間コスト概算:
+  入力: 3M tokens × $0.50 = $1.50
+  出力: 4.5M tokens × $3.00 = $13.50
+  検索: 5,000プロンプト無料枠内
+  合計: 約$15/月 (約2,300円)
+
+※リサーチモードのmulti-step (品質チェック含む) は
+  1質問で3〜5回のAPI呼び出しになるため、
+  リサーチを多用する場合は月$25〜40程度になる可能性あり
+8. ブラッシュアップガイド
+完成後に使いながら改善するためのガイドライン。
+
+プロンプトのチューニング方法
+各プロンプトファイルは独立しているため、1ファイルずつ改善できる。改善手順は、問題のある回答を特定し、prompts/_index.tsから該当プロンプトを確認し、プロンプトを修正し、同じ質問で再テストする、という流れ。
+
+よくある改善ポイント
+回答が冗長すぎる場合はsystem-base.tsの「回答フォーマット」セクションを調整する。検索が不要なのに検索してしまう場合はtool-usage.tsの「ツールを使わない場合」を充実させる。コードが不完全な場合はmode-coding.tsに具体例を追加する。リサーチの深さが足りない場合はdeep-research-planner.tsのクエリ数を増やし、quality-check.tsの閾値を上げる。
+
+新しいモードの追加方法
+prompts/に新しいモードファイル（例: mode-writing.ts）を追加し、prompts/_index.tsのMODE_PROMPTSに登録し、types/index.tsのChatModeに追加し、lib/mode-detector.tsの分類ルールに追加する。4ファイルの変更のみで新モードが追加できる。
+
+9. 実装順序チェックリスト
+Phase 1: プロジェクト初期セットアップ
+  [ ] Step 1-1: Next.js プロジェクト作成
+  [ ] Step 1-2: パッケージインストール
+  [ ] Step 1-3: 環境変数設定 (.env.local)
+  [ ] Step 1-4: ディレクトリ構造作成
+  [ ] Step 1-5: 全12プロンプトファイル + インデックス配置
+  [ ] Step 1-6: 型定義ファイル作成
+  [ ] Step 1-7: 起動確認
+
+Phase 2: バックエンドAPI
+  [ ] Step 2-1: prompt-builder.ts
+  [ ] Step 2-2: app/api/chat/route.ts (基本版)
+  [ ] Step 2-3: curl で動作確認
+
+Phase 3: フロントエンドUI
+  [ ] Step 3-1: app/page.tsx (メインチャットページ)
+  [ ] Step 3-2: ChatWindow.tsx
+  [ ] Step 3-3: MessageBubble.tsx (Markdown + コードハイライト)
+  [ ] Step 3-4: MessageParts.tsx (テキスト/画像/ソース表示)
+  [ ] Step 3-5: InputArea.tsx (入力欄 + モード切替)
+  [ ] Step 3-6: FileUpload.tsx (ファイル添付)
+  [ ] Step 3-7: SourceCitation.tsx (検索ソース引用)
+  [ ] Step 3-8: CodeBlock.tsx (コピーボタン付き)
+
+Phase 4: オーケストレーション層
+  [ ] Step 4-1: mode-detector.ts (意図分類)
+  [ ] Step 4-2: orchestrator.ts (メインオーケストレーション)
+  [ ] Step 4-3: route.ts 改修 (orchestrator統合)
+  [ ] Step 4-4: deep-research.ts (リサーチ計画ツール)
+
+Phase 5: コンテキスト管理
+  [ ] Step 5-1: db/schema.ts (Dexie.js)
+  [ ] Step 5-2: db/conversations.ts
+  [ ] Step 5-3: db/preferences.ts
+  [ ] Step 5-4: context-manager.ts
+  [ ] Step 5-5: Sidebar.tsx (会話一覧)
+  [ ] Step 5-6: page.tsx 改修 (DB統合)
+
+Phase 6: 品質向上
+  [ ] Step 6-1: 品質チェック統合
+  [ ] Step 6-2: エラーリカバリー
+  [ ] Step 6-3: リトライロジック
+  [ ] Step 6-4: ThinkingIndicator.tsx
+
+Phase 7: 仕上げ + デプロイ
+  [ ] Step 7-1: レスポンシブ対応
+  [ ] Step 7-2: ダークモード
+  [ ] Step 7-3: SettingsPanel.tsx
+  [ ] Step 7-4: キーボードショートカット
+  [ ] Step 7-5: Vercel デプロイ
+  [ ] Step 7-6: パフォーマンスチューニング
+  [ ] Step 7-7: 全テストケース実行
+これが「Gensparkを自分の手で」作るための究極実装手順書の全貌です。プロンプトはすべて独立ファイルで、インデックスで一元管理できる。オーケストレーション層がGenspark同等の多段階処理を行い、コンテキスト管理が長期にわたる会話を支える。
+
+バイブコーディングで進める場合は、このドキュメント全体をAIに渡して「Phase 1から順に実装して」と指示すれば進められる設計にしてある。
+
+何か調整したい部分や、特定のPhaseの詳細コードが欲しい場合は言ってくれ。

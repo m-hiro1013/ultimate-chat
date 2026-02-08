@@ -1,0 +1,33 @@
+project:
+  name: "ultimate-chat"
+  purpose: "Gemini 3 Flash Preview と AI SDK v6 を活用した、高度なリサーチ機能（Deep Research）とGENSPARK準拠のUI/UXを備えた究極のチャットアプリケーション。"
+  repository: "https://github.com/Sunwood-ai-labs/ultimate-chat"
+
+tech_stack:
+  frontend:
+    framework: "Next.js 15 (App Router)"
+    styling: "Tailwind CSS"
+    state_management: "React Hooks"
+    database: "Dexie.js (IndexedDB)"
+  backend:
+    runtime: "Node.js (Next.js API Routes)"
+    ai_sdk: "Vercel AI SDK v6"
+    llm: "Google Gemini 3 Flash Preview"
+  content_processing:
+    markdown: "react-markdown"
+    syntax_highlighting: "highlight.js (github-dark)"
+
+key_features:
+  - "Deep Research: google_search と url_context ツールを組み合わせた多段ループリサーチ"
+  - "Auto-mode: ユーザーの入力に応じて最適なツールを AI が自動選択"
+  - "Usage Stats UI: リアルタイムなトークン消費量とコスト算出"
+  - "Thought Signature Handling: マルチターン会話における AI の思考プロセスの完全保存と復元"
+  - "GENSPARK Compliance: maxTokens, mediaResolution, 引用情報の可視化"
+
+standards:
+  coding:
+    - "TypeScript Strict Mode"
+    - "parts ベースのメッセージ構造維持"
+  ui:
+    - "GENSPARK 1.6 準拠"
+    - "Responsive Design"

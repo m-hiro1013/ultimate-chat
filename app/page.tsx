@@ -58,7 +58,7 @@ export default function Home() {
     transport: new DefaultChatTransport({
       api: '/api/chat',
     }),
-    onFinish: async (result) => {
+    onFinish: async (result: any) => {
       // 会話をDBに保存
       if (currentConversation && result.message) {
         const message = result.message;
@@ -169,40 +169,17 @@ export default function Home() {
 
       if (mimeType.startsWith('image/')) {
         parts.push({
-          type: 'file',
-          data: att.dataUrl,
-          mediaType: mimeType,
+          type: 'image',
+          url: att.dataUrl,
+          alt: fileName,
         });
-      } else if (mimeType === 'application/pdf') {
-        parts.push({
-          type: 'file',
-          data: att.dataUrl,
-          mediaType: mimeType,
-        });
-      } else if (
-        mimeType.startsWith('text/') ||
-        /\.(js|ts|tsx|jsx|py|json|md|txt|csv|yaml|yml|toml|xml|html|css|sql|sh|bash)$/i.test(fileName)
-      ) {
-        // テキスト/コード: テキスト内容を抽出してテキストパーツとして送信
-        try {
-          const base64Content = att.dataUrl.split(',')[1];
-          const textContent = atob(base64Content);
-          parts.push({
-            type: 'text',
-            text: `\n\n---\n📄 添付ファイル: ${fileName}\n\`\`\`\n${textContent}\n\`\`\`\n---\n`,
-          });
-        } catch {
-          parts.push({
-            type: 'file',
-            data: att.dataUrl,
-            mediaType: mimeType || 'application/octet-stream',
-          });
-        }
       } else {
+        // 画像以外は 'file' パーツとして送信: ユーザー画面をスッキリさせるため
         parts.push({
           type: 'file',
-          data: att.dataUrl,
-          mediaType: mimeType || 'application/octet-stream',
+          url: att.dataUrl,
+          mimeType: mimeType || 'application/octet-stream',
+          name: fileName,
         });
       }
     }

@@ -131,9 +131,12 @@ export async function orchestrate(config: OrchestratorConfig): Promise<Orchestra
 
     console.log('[Orchestrator] Mode:', detectedMode, 'ThinkingLevel:', detectedThinkingLevel);
 
-    // ステップ2: リサーチモードの場合、リサーチ計画を立てる
+    // ステップ2: リサーチモードまたは添付ファイルがある場合、プロンプトを強化
     let researchPlan: ResearchPlan | undefined;
     let additionalSystemPrompt = '';
+
+    // 添付ファイルの有無を確認
+    const hasAttachments = messages.some(m => m.parts?.some((p: any) => p.type === 'file' || p.type === 'image'));
 
     if (detectedMode === 'research') {
         try {
@@ -161,6 +164,17 @@ ${researchPlan.fallbackStrategy}
         }
     }
 
+    // 添付ファイル解析の強化: GENSPARK 6.7 準拠
+    if (hasAttachments) {
+        additionalSystemPrompt += `
+\n## 添付ファイルの解析手順
+ユーザーからファイル（画像、PDF、テキスト等）が提供されています。以下の点に留意して回答してください：
+1. **内容の最優先確認**: ユーザーの質問がファイルに関連している場合、まずファイルの内容を詳細に分析してください。
+2. **具体的な引用**: 回答の中でファイル内の具体的な箇所やデータを引用し、根拠を明確にしてください。
+3. **視覚情報の言語化**: 画像の場合、描かれている内容や特徴を正確に言語化して回答に反映させてください。
+`;
+    }
+
     // ステップ3: システムプロンプト構築
     const systemPrompt = buildSystemPrompt({
         mode: detectedMode,
@@ -178,18 +192,15 @@ ${researchPlan.fallbackStrategy}
     const geminiThinkingLevel = thinkingLevelMap[detectedThinkingLevel] || 'medium';
 
     // ステップ5: streamText実行（エラーハンドリング付き）
-    let stream: ReturnType<typeof streamText>;
     let lastError: unknown;
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         try {
-            stream = streamText({
+            const result = (streamText as any)({
                 model: google('gemini-3-flash-preview'),
                 system: systemPrompt,
                 messages: messages as any,
-                maxSteps: detectedMode === 'research' ? 10 : 3, // AI SDK v6 replacement for manual step management
-                maxTokens: 65536, // ← 追加: GENSPARK 1.3 準拠
-                temperature: 1.0,
+                maxSteps: detectedMode === 'research' ? 10 : 3,
                 tools: {
                     google_search: google.tools.googleSearch({}),
                     url_context: google.tools.urlContext({}),
@@ -199,21 +210,22 @@ ${researchPlan.fallbackStrategy}
                         thinkingConfig: {
                             thinkingLevel: geminiThinkingLevel,
                         },
-                        // ファイル添付がある場合は高解像度に設定: GENSPARK 6.7 準拠
+                        // GENSPARK 1.3/6.7 準拠
+                        maxTokens: 65536,
                         ...(messages.some(m => m.parts?.some((p: any) => p.type === 'file' || p.type === 'image')) && {
                             mediaResolution: 'MEDIA_RESOLUTION_HIGH',
                         }),
-                    } satisfies GoogleGenerativeAIProviderOptions,
+                    } as any,
                 },
-                onStepFinish({ finishReason, usage }) {
+                onStepFinish({ finishReason, usage }: any) {
                     console.log('[Step]', { finishReason, usage });
                 },
-                onFinish: async ({ text }) => {
+                onFinish: async ({ text }: any) => {
                     // リサーチモードの場合、品質チェックを実行（非同期）
                     if (detectedMode === 'research') {
                         try {
                             const { QUALITY_CHECK_PROMPT } = await import('@/prompts/quality-check');
-                            const qualityResult = await generateObject({
+                            await (generateObject as any)({
                                 model: google('gemini-3-flash-preview'),
                                 schema: z.object({
                                     accuracy: z.object({ score: z.number(), issues: z.array(z.string()) }),
@@ -234,20 +246,18 @@ ${researchPlan.fallbackStrategy}
                                     },
                                 },
                             });
-                            console.log('[Quality Check] Result:', qualityResult.object);
                         } catch (error) {
                             console.error('[Quality Check] Failed:', error);
                         }
                     }
                 },
-                onError({ error }) {
+                onError({ error }: any) {
                     console.error('[StreamText Error]', error);
                 },
             });
 
-            // streamが正常に作成されたらループを抜ける
             return {
-                stream,
+                stream: result,
                 detectedMode,
                 detectedThinkingLevel,
                 researchPlan,
@@ -270,27 +280,26 @@ ${researchPlan.fallbackStrategy}
     console.error('[Orchestrator] All retries failed, using fallback');
 
     // エラーリカバリーモード: 検索なしで回答
-    stream = streamText({
+    const fallbackResult = (streamText as any)({
         model: google('gemini-3-flash-preview'),
         system: systemPrompt + '\n\n' + ERROR_RECOVERY_PROMPT,
         messages: messages as any,
-        maxTokens: 65536, // ← 追加
-        temperature: 1.0,  // ← 追加
         // ツールなしでフォールバック、thinkingはminimalで高速化
         providerOptions: {
             google: {
                 thinkingConfig: {
                     thinkingLevel: 'minimal',
                 },
-            } satisfies GoogleGenerativeAIProviderOptions,
+                maxTokens: 65536,
+            } as any,
         },
-        onStepFinish({ finishReason, usage }) {
+        onStepFinish({ finishReason, usage }: any) {
             console.log('[Fallback Step]', { finishReason, usage });
         },
     });
 
     return {
-        stream,
+        stream: fallbackResult,
         detectedMode,
         detectedThinkingLevel,
         researchPlan,

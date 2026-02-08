@@ -77,7 +77,8 @@ export function detectModeQuick(message: string): ChatMode {
         'コード', 'code', '実装', 'implement', '作って', '書いて',
         'プログラム', 'program', '関数', 'function', 'バグ', 'bug',
         'エラー', 'error', 'デバッグ', 'debug', 'typescript', 'javascript',
-        'python', 'react', 'next.js', 'api', 'npm', 'pnpm',
+        'python', 'react', 'next.js', 'api', 'npm', 'pnpm', 'リファクタ',
+        'テスト', 'test', 'ビルド', 'build', 'コンパイル', 'compile',
     ];
 
     // リサーチモードのキーワード
@@ -85,7 +86,8 @@ export function detectModeQuick(message: string): ChatMode {
         '調べて', '教えて', '調査', 'research', '最新', 'latest',
         '比較', 'compare', 'どっちがいい', 'おすすめ', 'recommendation',
         'ニュース', 'news', '情報', 'information', 'について',
-        '違い', 'difference', 'メリット', 'デメリット',
+        '違い', 'difference', 'メリット', 'デメリット', '深掘り',
+        '徹底的', '詳細', 'detail', 'イベント', '天気', '価格',
     ];
 
     // キーワードマッチング
@@ -110,6 +112,7 @@ export function needsSearchQuick(message: string): boolean {
         '調べて', 'search', '検索', 'ニュース', 'news',
         '2025', '2026', 'いつ', 'when', 'どこ', 'where',
         'バージョン', 'version', 'リリース', 'release',
+        '誰', 'who', '何', 'what', 'なぜ', 'why', '方法', 'how to',
     ];
 
     return searchKeywords.some(kw => lowerMessage.includes(kw));

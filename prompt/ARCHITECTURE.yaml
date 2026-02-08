@@ -1,0 +1,58 @@
+architecture:
+  version: "1.0.0"
+  description: "Ultimate Chat の論理構成とデータフロー"
+
+  core_flow:
+    input: "InputArea.tsx -> useChat (app/page.tsx)"
+    processing:
+      orchestration: "lib/orchestrator.ts (Intent classification -> Prompt building -> streamText)"
+      intent_detection: "lib/mode-detector.ts (Keyword-based + AI-based with Gemini 3 Flash)"
+      prompt_construction: "lib/prompt-builder.ts (System prompt composition)"
+    output: "MessageParts.tsx (Markdown, Thinking, Source, File/Image rendering)"
+
+  data_management:
+    persistence: "Dexie.js (IndexedDB) -> conversation & messages tables"
+    history_restoration: "app/page.tsx (restoring parts-based messages to preserve Thought Signatures)"
+    memory:
+      long_term: "lib/db/preferences.ts (User instructions)"
+      mid_term: "lib/context-manager.ts (Automatic summarization logic)"
+
+  token_management:
+    tracking: "AI SDK v6 onFinish (usage object) data flow to UsageStats.tsx"
+    costs: "Real-time JPY calculation based on Gemini 3 Flash Preview rates"
+
+  multimodal_handling:
+    attachments: "Parts-based message structure (Text, Image, File parts)"
+    file_analysis: "Dynamic prompt injection when hasFileAttachment is true"
+
+completed_features:
+  phase1:
+    name: "プロトタイプ構築"
+    status: "done"
+    completed_at: "2026-02-07"
+    features:
+      - id: "F001"
+        name: "会話履歴の永続化"
+        description: "IndexedDBを使用して全メッセージとツール結果を保存"
+        file: "lib/db/conversations.ts"
+        status: "done"
+  phase2:
+    name: "主要機能とGENSPARK準拠対応"
+    status: "done"
+    completed_at: "2026-02-08"
+    features:
+      - id: "F003"
+        name: "GENSPARK準拠対応"
+        description: "maxTokens: 64k, mediaResolution: High などのプロバイダーパラメータ設定"
+        file: "lib/orchestrator.ts"
+        status: "done"
+      - id: "F004"
+        name: "使用量UI (UsageStats)"
+        description: "セッションごとのトークン使用量とコストの可視化"
+        file: "components/UsageStats.tsx"
+        status: "done"
+      - id: "F005"
+        name: "自動モード判定"
+        description: "キーワードとAI判定を組み合わせたモード（一般/リサーチ/コーディング）の自動選択"
+        file: "lib/mode-detector.ts"
+        status: "done"

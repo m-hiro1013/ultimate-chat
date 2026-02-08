@@ -1,42 +1,42 @@
 workflow:
-  version: "1.2.0"
-  last_updated: "2026-02-08T08:46:21+09:00"
+  version: "1.2.1"
+  last_updated: "2026-02-08T09:42:00+09:00"
 
   last_session_summary: |
     【今回のセッションでやったこと】
-    - GENSPARK準拠 (Priority 1 & 2) の実装完了。
-    - Thought Signatures の完全保持（partsベースのDB保存・復元実装）。
-    - 64k maxTokens 設定、高解像度メディア対応 (mediaResolution)。
-    - 「自動判定」モードの追加と InputArea への統合。
-    - セッション使用量UI (UsageStats) の実装とページへの統合（リアルタイムコスト表示）。
-    - 添付ファイル時の解析プロンプト自動注入機能の追加。
-    - highlight.js の github-dark テーマ適用。
+    - ビルドエラーの修正: `prompt-builder.ts` 内の不正な `import` 位置を修正。
+    - 添付ファイルUIの最適化: `app/page.tsx` において、テキストファイル添付時に全文が表示されないよう `type: 'file'` への送信方式に変更（アイコン表示化）。
+    - 自動判定（auto）の強化: `mode-detector.ts` のキーワードリストを拡張し、日本語のニュアンス捕捉精度を向上。
+    - 添付ファイル解析プロンプトの動的注入: `orchestrator.ts` において、ファイル添付時に解析手順をシステムプロンプトへ追加。
+    - AI SDK v6 型エラーの解消: `orchestrator.ts` および `page.tsx` における型不整合を修正。
     
     【次にやること】
-    - 添付ファイルを含めた実環境での最終確認。
-    - 「自動判定」モードにおける動的な詳細プロンプト注入ロジックのブラッシュアップ。
+    - 「自動判定」モードにおける深掘り・ツールの多段呼び出しの最終精度確認。
+    - 画像生成ツール（DALL-E 3 等）の統合検討。
+    - `UsageStats` コンポーネントのモバイル表示最適化。
 
   progress:
     current_phase:
-      number: 2
-      name: "主要機能と準拠対応"
-      status: "completed"
+      number: 3
+      name: "高度な統合と最適化"
+      status: "in_progress"
     
     current_task:
-      description: "GENSPARK準拠対応と使用量UIの実装"
-      started_at: "2026-02-08T08:00:00+09:00"
+      description: "機能の最終検証とUI/UXの微調整"
+      started_at: "2026-02-08T09:30:00+09:00"
     
     completed_phases:
       - phase: 1
         name: "プロトタイプ構築"
         completed_at: "2026-02-07"
       - phase: 2
-        name: "主要機能と準拠対応"
+        name: "主要機能とGENSPARK準拠対応"
         completed_at: "2026-02-08"
     
     next_tasks:
-      - 添付ファイルを含めた実環境での最終確認
-      - 「自動判定」モードの詳細ロジック強化
+      - 高度なリサーチシナリオでの自動判定テスト
+      - 画像生成機能の追加
+      - モバイル表示の改善
 
   decisions:
     adopted:
@@ -44,34 +44,23 @@ workflow:
         date: "2026-02-07"
         decision: "IndexedDB (Dexie.js) による永続化"
         reason: "ブラウザ単体で完結し、かつオフラインでも高速に履歴を管理するため。"
-      - id: "D002"
-        date: "2026-02-07"
-        decision: "AI SDK v6 (streamText) の採用"
-        reason: "マルチステップツールコールや思考プロセスの容易な取得のため。"
-      - id: "D003"
-        date: "2026-02-07"
-        decision: "検索・URLコンテキストツールの分離"
-        reason: "精度向上のため、役割を明確に分けたプロンプト設計を行う。"
-      - id: "D004"
+      - id: "D007"
         date: "2026-02-08"
-        decision: "'auto' モードの追加"
-        reason: "ユーザーがモードを意識しなくてもAIが最適なツールを選択できるようにするため。"
-      - id: "D005"
+        decision: "テキストファイルのUI表示をファイルアイコンに限定"
+        reason: "長大なプロンプトがチャット画面を埋め尽くすのを防ぎ、UIの視認性を高めるため。"
+      - id: "D008"
         date: "2026-02-08"
-        decision: "parts ベースのメッセージ履歴保存"
-        reason: "400エラーを防ぎ、Thought Signatures やマルチモーダル情報を完全に保持するため。"
-      - id: "D006"
+        decision: "添付ファイル解析プロンプトの動的注入"
+        reason: "ファイルの内容を根拠とした回答精度（Grounding）を向上させるため。"
+      - id: "D009"
         date: "2026-02-08"
-        decision: "UsageStats コンポーネントによるリアルタイムコスト表示"
-        reason: "トークン消費量を可視化し、GENSPARK 1.6 準拠とユーザー体験向上のため。"
+        decision: "AI SDK v6 プロバイダーオプションの型合わせ (as any)"
+        reason: "最新のSDKとプロバイダー固有の型定義の不整合を解消し、ビルドを安定させるため。"
 
   features:
     completed:
       - id: "F001"
         name: "会話履歴の永続化"
-        status: "done"
-      - id: "F002"
-        name: "マルチモードチャット（検索/リサーチ/コーディング）"
         status: "done"
       - id: "F003"
         name: "GENSPARK準拠 (maxTokens/mediaResolution)"
@@ -80,10 +69,13 @@ workflow:
         name: "セッション使用量UI"
         status: "done"
       - id: "F005"
-        name: "自動モード判定"
+        name: "自動モード判定（強化版）"
         status: "done"
     
-    in_progress: []
+    in_progress:
+      - id: "F007"
+        name: "添付ファイル解析の高度化"
+        status: "in_progress"
     
     planned:
       - id: "F006"
@@ -93,13 +85,16 @@ workflow:
   file_structure:
     created:
       - components/UsageStats.tsx
+      - prompt/ARCHITECTURE.yaml
     
     to_create: []
     
     to_modify:
       - app/page.tsx
       - lib/orchestrator.ts
+      - lib/mode-detector.ts
+      - lib/prompt-builder.ts
 
   cautions:
-    - "parts の復元漏れがあるとThought Signatureで400エラーが出るので注意。"
-    - "Gemini 3 Flash Preview の API パラメータ仕様変更に追従すること。"
+    - "AI SDK v6 の streamText オプション位置（maxTokens 等）がプロバイダー側に移行しているため注意。"
+    - "parts ベースの通信を維持しないと Thought Signature で 400 エラーが出る。"

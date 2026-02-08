@@ -6,6 +6,7 @@
 import { SYSTEM_BASE_PROMPT } from '@/prompts/system-base';
 import { TOOL_USAGE_PROMPT } from '@/prompts/tool-usage';
 import { MODE_PROMPTS, type ChatMode } from '@/prompts/_index';
+import { FILE_ANALYSIS_PROMPT } from '@/prompts/file-analysis';
 import type { ConversationSummary } from '@/types';
 
 /**
@@ -20,8 +21,6 @@ export function buildSystemPrompt(params: {
     hasFileAttachment?: boolean; // ← 追加: GENSPARK 4.8 準拠
 }): string {
     const { mode, longTermMemory, midTermSummary, hasFileAttachment } = params;
-
-    import { FILE_ANALYSIS_PROMPT } from '@/prompts/file-analysis';
 
     // 基本パーツを組み立て
     const parts: string[] = [

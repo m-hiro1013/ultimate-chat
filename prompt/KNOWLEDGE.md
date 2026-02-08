@@ -76,14 +76,27 @@ const { messages, sendMessage, status } = useChat({
 const parts = [{ type: 'text', text: content }];
 sendMessage({ parts });
 ```
-### 2026-02-08 (GENSPARK準拠と使用量UI)
+### 2026-02-08 Session III (AI SDK v6 Transition & Attachment Optimization)
 
-- **Learnings (+3)**:
-    - AI SDK の `onFinish` で返却される `usage` オブジェクトを累積することで、セッション全体のトークンコストをリアルタイムに算出可能。
-    - Multimodal (Gemini) において、過去のメッセージ履歴を復元する際は `content` (string) だけでなく `parts` (array) をそのまま渡すことが極めて重要。Thought Signature が含まれる場合、単なる文字列復元だと不整合で 400 エラーになる。
-    - `mediaResolution` パラメータを添付ファイルの有無に応じて `MEDIA_RESOLUTION_HIGH` に切り替えることで、GENSPARKの要件を満たしつつトークン効率を最適化できる。
-    - ファイル解析プロンプトはメッセージの「直前」に配置することで、AIの理解度が向上する。
+#### 学んだこと（+3 = 必須級, +2 = 推奨, +1 = 参考）
 
-- **Pain Points (+2)**:
-    - `react-markdown` で `parts` を直接扱う場合、テキストパーツだけを抽出して結合するロジックが必要（以前は content のみで良かったが、parts ベースに移行したため）。
-    - IndexedDB に `parts` を保存する場合、ファイルデータ (base64) が巨大化するため、ストレージ容量に配慮が必要（現在はそのまま保存しているが、将来的に URL 参照等への移行検討余地あり）。
+| 知見 | ウェイト | カテゴリ |
+|------|---------|---------|
+| AI SDK v6 (streamText) では `maxSteps` はトップレベルオプションだが、一部の状態管理と不整合が出る場合は明示的な制御が必要な場合がある | +3 | AI SDK |
+| `maxTokens` はトップレベルではなく `providerOptions.google` 内に配置する必要がある（Gemini固有パラメータとしての扱い） | +3 | Gemini |
+| 添付ファイルがある場合にシステムプロンプトに「解析手順」を動的に注入することで、AIの根拠提示（引用）の質が劇的に向上する | +2 | Prompting |
+| `mediaResolution: 'MEDIA_RESOLUTION_HIGH'` はファイル添付時のみ有効にすることで、トークン節約と精度のバランスを取れる | +2 | Cost |
+
+#### ハマったポイント
+
+1. **AI SDK v6 のプロパティ位置**
+   - 問題: `maxTokens` を `streamText` のトップレベルに置くと TypeScript エラーが発生、または無視される。
+   - 解決: `providerOptions.google` 配下に移動。SDKのバージョンアップに伴う破壊的変更や型定義の厳格化に注意が必要。
+
+2. **自動モード判定の不発**
+   - 問題: 「深掘りして」などのキーワードが一般モードに判定されていた。
+   - 解決: `detectModeQuick` のキーワードリストを拡張し、日本語特有の表現（「調べて」「徹底的に」等）を強化。
+
+3. **添付ファイルによるチャット画面の埋め尽くし**
+   - 問題: テキストファイルを添付すると全文が「テキストパーツ」として表示され、画面が非常に長くなる。
+   - 解決: 送信時にテキストファイルも `type: 'file'` パーツとして扱うように変更。UI上はアイコンとファイル名のみが表示され、AIには `parts` 経由で全文が伝わる設計にした。

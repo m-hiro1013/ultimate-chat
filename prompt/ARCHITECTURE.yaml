@@ -56,3 +56,13 @@ completed_features:
         description: "キーワードとAI判定を組み合わせたモード（一般/リサーチ/コーディング）の自動選択"
         file: "lib/mode-detector.ts"
         status: "done"
+  phase3:
+    name: "UX・アクセシビリティ改善"
+    status: "done"
+    completed_at: "2026-02-08"
+    features:
+      - id: "F008"
+        name: "UX・アクセシビリティ強化"
+        description: "言語設定、IME対応、ストリーミング制御、スクロール保護、日付別履歴、カスタムUI等の一連のUX改善"
+        file: "app/page.tsx, components/Sidebar.tsx, components/InputArea.tsx"
+        status: "done"

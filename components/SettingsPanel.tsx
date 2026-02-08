@@ -86,13 +86,19 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             />
 
             {/* パネル本体 */}
-            <div className="fixed inset-y-0 right-0 w-full max-w-md bg-gray-900 border-l border-gray-800 z-50 flex flex-col">
+            <div
+                className="fixed inset-y-0 right-0 w-full max-w-md bg-gray-900 border-l border-gray-800 z-50 flex flex-col"
+                role="dialog"
+                aria-modal="true"
+                aria-label="設定パネル"
+            >
                 {/* ヘッダー */}
                 <div className="flex items-center justify-between p-4 border-b border-gray-800">
                     <h2 className="text-lg font-semibold text-white">設定</h2>
                     <button
                         onClick={onClose}
                         className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors"
+                        aria-label="閉じる"
                     >
                         <CloseIcon className="w-5 h-5" />
                     </button>
@@ -151,18 +157,18 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                             </div>
 
                             {/* カスタムインストラクション */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-300 mb-2">
+                            <div className="pt-4 border-t border-gray-800">
+                                <label className="block text-sm font-bold text-blue-400 mb-3 uppercase tracking-wider">
                                     カスタムインストラクション
                                 </label>
                                 <textarea
                                     value={preferences.customInstructions}
                                     onChange={(e) => setPreferences({ ...preferences, customInstructions: e.target.value })}
-                                    rows={6}
-                                    className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white resize-none focus:ring-2 focus:ring-blue-500"
+                                    rows={10}
+                                    className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white resize-none focus:ring-2 focus:ring-blue-500 custom-scrollbar"
                                     placeholder="AIへの追加指示を入力（例: 常にコードにコメントを付けて、変数名は日本語で説明して）"
                                 />
-                                <p className="mt-1 text-xs text-gray-500">
+                                <p className="mt-2 text-xs text-gray-500 italic">
                                     ここに書いた内容は、すべての会話でAIに伝えられます
                                 </p>
                             </div>

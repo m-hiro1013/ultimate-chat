@@ -8,6 +8,8 @@
 import { MessageParts } from './MessageParts';
 import type { Message } from '@/types';
 
+import { memo } from 'react';
+
 interface MessageBubbleProps {
     message: Message;
 }
@@ -15,7 +17,7 @@ interface MessageBubbleProps {
 /**
  * 個別メッセージをバブル形式で表示
  */
-export function MessageBubble({ message }: MessageBubbleProps) {
+export const MessageBubble = memo(({ message }: MessageBubbleProps) => {
     const isUser = message.role === 'user';
 
     return (
@@ -61,4 +63,6 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             </div>
         </div>
     );
-}
+});
+
+MessageBubble.displayName = 'MessageBubble';

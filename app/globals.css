@@ -84,7 +84,47 @@ textarea:focus {
   a {
     min-height: 44px;
     min-width: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
+}
+
+/* 視覚的配慮のメディアクエリ (P1) */
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Firefox用スクロールバー (P2) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #4b5563 #1f2937;
+}
+
+/* カスタムスクロールバー (P2) */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #374151;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #4b5563;
 }
 
 /* highlight.js github-dark theme */

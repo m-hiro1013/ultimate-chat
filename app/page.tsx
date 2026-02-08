@@ -54,7 +54,7 @@ export default function Home() {
   });
 
   // useChat hook - AI SDK v6
-  const { messages, sendMessage, status, error, setMessages } = useChat({
+  const { messages, sendMessage, status, error, setMessages, stop } = useChat({
     transport: new DefaultChatTransport({
       api: '/api/chat',
     }),
@@ -89,7 +89,7 @@ export default function Home() {
     },
   });
 
-  // 初期化: 長期記憶を取得し、新しい会話を作成
+  // 初期化: 長期記憶を取得し、前回の会話または新しい会話を作成
   useEffect(() => {
     const init = async () => {
       try {
@@ -97,12 +97,22 @@ export default function Home() {
         const memory = await getLongTermMemoryString();
         setLongTermMemory(memory);
 
-        // 新しい会話を作成
-        const conversation = await createConversation('general');
-        setCurrentConversation(conversation);
+        // 前回の会話IDを復元
+        const lastConversationId = localStorage.getItem('lastConversationId');
+        if (lastConversationId) {
+          await handleSelectConversation(lastConversationId);
+        } else {
+          // 新しい会話を作成
+          const conversation = await createConversation('general');
+          setCurrentConversation(conversation);
+          localStorage.setItem('lastConversationId', conversation.id);
+        }
         setInitialized(true);
       } catch (error) {
         console.error('[Init] Failed:', error);
+        // フォールバック: 新規作成
+        const conversation = await createConversation('general');
+        setCurrentConversation(conversation);
         setInitialized(true);
       }
     };
@@ -298,7 +308,7 @@ export default function Home() {
       />
 
       {/* メインコンテンツ */}
-      <main className="flex-1 flex flex-col h-screen">
+      <main className="flex-1 flex flex-col h-[100dvh]">
         {/* ヘッダー */}
         <header className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
           <div className="flex items-center gap-3">
@@ -363,7 +373,9 @@ export default function Home() {
           onSubmit={handleSubmit}
           mode={mode}
           onModeChange={handleModeChange}
-          disabled={status !== 'ready'}
+          disabled={status !== 'ready' && status !== 'streaming'}
+          isStreaming={status === 'streaming'}
+          onStop={stop}
         />
 
         {/* キーボードショートカットのヒント */}

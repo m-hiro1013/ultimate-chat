@@ -1,29 +1,30 @@
 workflow:
-  version: "1.2.1"
-  last_updated: "2026-02-08T09:42:00+09:00"
+  version: "1.3.0"
+  last_updated: "2026-02-08T14:20:00+09:00"
 
   last_session_summary: |
     【今回のセッションでやったこと】
-    - ビルドエラーの修正: `prompt-builder.ts` 内の不正な `import` 位置を修正。
-    - 添付ファイルUIの最適化: `app/page.tsx` において、テキストファイル添付時に全文が表示されないよう `type: 'file'` への送信方式に変更（アイコン表示化）。
-    - 自動判定（auto）の強化: `mode-detector.ts` のキーワードリストを拡張し、日本語のニュアンス捕捉精度を向上。
-    - 添付ファイル解析プロンプトの動的注入: `orchestrator.ts` において、ファイル添付時に解析手順をシステムプロンプトへ追加。
-    - AI SDK v6 型エラーの解消: `orchestrator.ts` および `page.tsx` における型不整合を修正。
+    - UX改善（P0〜P3）の完遂:
+        - アクセシビリティ向上: `lang="ja"` の設定、`aria-label` の網羅、`prefers-reduced-motion` 対応。
+        - インタラクション改善: ストリーミング停止ボタン、日本語IME誤送信防止、スクロールジャンプ防止。
+        - UI/デザインの刷新: 会話履歴の日付別グループ化、カスタム削除確認UI、D&Dの視覚フィードバック、リッチな初期画面（Empty State）。
+        - モバイル最適化: `100dvh` 対応、提案チップのスナップスクロール実装。
+    - バグ修正: サイドバーの削除ロジックにおける lint エラーや、インライン SVG への移行による依存関係問題の解消。
     
     【次にやること】
-    - 「自動判定」モードにおける深掘り・ツールの多段呼び出しの最終精度確認。
-    - 画像生成ツール（DALL-E 3 等）の統合検討。
-    - `UsageStats` コンポーネントのモバイル表示最適化。
+    - 会話履歴が長大になった場合のパフォーマンス・監査（仮想スクロールの検討）。
+    - DALL-E 3 等の画像生成ツールの統合。
+    - ユーザーフィードバックに基づく微調整。
 
   progress:
     current_phase:
       number: 3
-      name: "高度な統合と最適化"
-      status: "in_progress"
+      name: "高度な統合と最適化 (UX完遂)"
+      status: "done"
     
     current_task:
-      description: "機能の最終検証とUI/UXの微調整"
-      started_at: "2026-02-08T09:30:00+09:00"
+      description: "UX評価レポートに基づく全改善項目の実装"
+      started_at: "2026-02-08T10:10:00+09:00"
     
     completed_phases:
       - phase: 1
@@ -32,11 +33,14 @@ workflow:
       - phase: 2
         name: "主要機能とGENSPARK準拠対応"
         completed_at: "2026-02-08"
+      - phase: 3
+        name: "高度な統合と最適化 (UX完遂)"
+        completed_at: "2026-02-08"
     
     next_tasks:
-      - 高度なリサーチシナリオでの自動判定テスト
+      - 大規模会話履歴のパフォーマンスチューニング
       - 画像生成機能の追加
-      - モバイル表示の改善
+      - プロンプトインジェクション耐性の再検証
 
   decisions:
     adopted:
@@ -44,18 +48,22 @@ workflow:
         date: "2026-02-07"
         decision: "IndexedDB (Dexie.js) による永続化"
         reason: "ブラウザ単体で完結し、かつオフラインでも高速に履歴を管理するため。"
-      - id: "D007"
+      - id: "D010"
         date: "2026-02-08"
-        decision: "テキストファイルのUI表示をファイルアイコンに限定"
-        reason: "長大なプロンプトがチャット画面を埋め尽くすのを防ぎ、UIの視認性を高めるため。"
-      - id: "D008"
+        decision: "100dvh による iOS サファリ対応"
+        reason: "モバイルでのアドレスバーによるレイアウト崩れを防ぎ、常にフルスクリーンを維持するため。"
+      - id: "D011"
         date: "2026-02-08"
-        decision: "添付ファイル解析プロンプトの動的注入"
-        reason: "ファイルの内容を根拠とした回答精度（Grounding）を向上させるため。"
-      - id: "D009"
+        decision: "会話履歴の日付別グループ化とカスタム削除UI"
+        reason: "履歴の視認性と操作性を向上させ、ブラウザ標準の警告を排除してプレミアム感を出すため。"
+      - id: "D012"
         date: "2026-02-08"
-        decision: "AI SDK v6 プロバイダーオプションの型合わせ (as any)"
-        reason: "最新のSDKとプロバイダー固有の型定義の不整合を解消し、ビルドを安定させるため。"
+        decision: "ドラッグ&ドロップの視覚的ハイライト"
+        reason: "ユーザーがファイル添付可能なエリアを直感的に理解できるようにするため。"
+      - id: "D013"
+        date: "2026-02-08"
+        decision: "インライン SVG アイコンへの移行"
+        reason: "外部パッケージ依存による開発環境（サンドボックス等）での不具合を避け、プロジェクトの自己完結性を高めるため。"
 
   features:
     completed:
@@ -66,16 +74,16 @@ workflow:
         name: "GENSPARK準拠 (maxTokens/mediaResolution)"
         status: "done"
       - id: "F004"
-        name: "セッション使用量UI"
+        name: "使用量UI (UsageStats)"
         status: "done"
       - id: "F005"
         name: "自動モード判定（強化版）"
         status: "done"
+      - id: "F008"
+        name: "UX改善 (P0-P3) パッケージ"
+        status: "done"
     
-    in_progress:
-      - id: "F007"
-        name: "添付ファイル解析の高度化"
-        status: "in_progress"
+    in_progress: []
     
     planned:
       - id: "F006"
@@ -86,6 +94,7 @@ workflow:
     created:
       - components/UsageStats.tsx
       - prompt/ARCHITECTURE.yaml
+      - prompt/KNOWLEDGE.md
     
     to_create: []
     
@@ -94,7 +103,12 @@ workflow:
       - lib/orchestrator.ts
       - lib/mode-detector.ts
       - lib/prompt-builder.ts
+      - components/Sidebar.tsx
+      - components/InputArea.tsx
+      - components/ChatWindow.tsx
+      - components/SettingsPanel.tsx
 
   cautions:
     - "AI SDK v6 の streamText オプション位置（maxTokens 等）がプロバイダー側に移行しているため注意。"
     - "parts ベースの通信を維持しないと Thought Signature で 400 エラーが出る。"
+    - "Heroicons の解決エラーを防ぐため、重要な UI 部品はインライン SVG を推奨。"

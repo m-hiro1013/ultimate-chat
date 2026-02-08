@@ -24,11 +24,18 @@ export function ChatWindow({ messages, isLoading, onSelectSuggestion }: ChatWind
 
     // 新しいメッセージ or ローディング状態変化で自動スクロール
     useEffect(() => {
-        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+        const container = bottomRef.current?.parentElement;
+        if (!container) return;
+
+        const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 100;
+
+        if (isAtBottom || (messages.length > 0 && messages[messages.length - 1].role === 'user')) {
+            bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
     }, [messages, isLoading]);
 
     return (
-        <div className="flex-1 overflow-y-auto px-4 py-6">
+        <div className="flex-1 overflow-y-auto px-4 py-6" aria-live="polite">
             {/* 空の状態 */}
             {messages.length === 0 && !isLoading && (
                 <div className="h-full flex flex-col items-center justify-center text-center">

@@ -51,7 +51,13 @@ export function SourceCitation({ sources }: SourceCitationProps) {
 
                                 {/* URL */}
                                 <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
-                                    {new URL(source.url).hostname}
+                                    {(() => {
+                                        try {
+                                            return new URL(source.url).hostname;
+                                        } catch (e) {
+                                            return source.url;
+                                        }
+                                    })()}
                                 </p>
 
                                 {/* スニペット（あれば） */}

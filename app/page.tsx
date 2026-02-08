@@ -14,14 +14,16 @@ import { InputArea } from '@/components/InputArea';
 import { Sidebar } from '@/components/Sidebar';
 import { SettingsPanel } from '@/components/SettingsPanel';
 import { ThinkingIndicator } from '@/components/ThinkingIndicator';
+import { UsageStats } from '@/components/UsageStats';
 import {
   createConversation,
   getConversation,
   addMessage as dbAddMessage,
 } from '@/lib/db/conversations';
 import { getLongTermMemoryString } from '@/lib/db/preferences';
-import { checkAndSummarize } from '@/lib/context-manager';
-import type { ChatMode, ThinkingLevel, Conversation, Message as DBMessage } from '@/types';
+import { getIntegratedContext, shouldSummarize, generateAndSaveSummary } from '@/lib/context-manager';
+import { isTextFile, isImageFile, isPdfFile, readTextFileWithLimit } from '@/lib/file-utils';
+import type { ChatMode, ThinkingLevel, Conversation, Message as DBMessage, ConversationSummary } from '@/types';
 
 /**
  * ホームページコンポーネント
@@ -53,11 +55,20 @@ export default function Home() {
     totalTokens: 0,
   });
 
+  // 中期記憶（要約）
+  const [midTermSummary, setMidTermSummary] = useState<ConversationSummary | null>(null);
+
   // useChat hook - AI SDK v6
-  const { messages, sendMessage, status, error, setMessages, stop } = useChat({
+  const { messages, sendMessage, status, error, setMessages, stop } = (useChat as any)({
     transport: new DefaultChatTransport({
       api: '/api/chat',
     }),
+    body: {
+      mode,
+      thinkingLevel,
+      longTermMemory,
+      midTermSummary,
+    },
     onFinish: async (result: any) => {
       // 会話をDBに保存
       if (currentConversation && result.message) {
@@ -77,14 +88,26 @@ export default function Home() {
           }));
         }
 
-        await dbAddMessage(currentConversation.id, {
+        const dbMessage: DBMessage = {
           id: message.id,
           role: 'assistant',
           content: textContent,
-          parts: message.parts as any, // ← partsをそのまま保存: GENSPARK 3.10/5.6 準拠
-          usage: result.usage, // 使用量も保存
+          parts: message.parts as any,
+          usage: result.usage,
           createdAt: new Date(),
-        });
+        };
+
+        await dbAddMessage(currentConversation.id, dbMessage);
+
+        // 必要に応じて要約を生成（中期記憶の更新）
+        const updatedMessages = [...messages, dbMessage];
+        if (shouldSummarize(updatedMessages as any, currentConversation.id)) {
+          console.log('[Home] Triggering summary generation...');
+          const newSummary = await generateAndSaveSummary(currentConversation.id, updatedMessages as any);
+          if (newSummary) {
+            setMidTermSummary(newSummary);
+          }
+        }
       }
     },
   });
@@ -169,38 +192,73 @@ export default function Home() {
   const handleSubmit = useCallback(async (content: string, attachments: { file: File; dataUrl: string }[] = []) => {
     if (!content.trim() && attachments.length === 0) return;
 
-    // partsを構築してマルチモーダル対応
-    const parts: any[] = [{ type: 'text', text: content }];
+    // ユーザーの質問テキストをまず追加
+    const parts: any[] = [];
+    if (content.trim()) {
+      parts.push({ type: 'text', text: content });
+    }
 
-    // 添付ファイルを追加: GENSPARK 6.6 準拠
+    // 添付ファイルを処理
     for (const att of attachments) {
-      const mimeType = att.file.type;
       const fileName = att.file.name;
 
-      if (mimeType.startsWith('image/')) {
+      if (isImageFile(att.file)) {
+        // 画像: Geminiが直接処理できるdata URLで送信
         parts.push({
           type: 'image',
           url: att.dataUrl,
           alt: fileName,
         });
-      } else {
-        // 画像以外は 'file' パーツとして送信: ユーザー画面をスッキリさせるため
+      } else if (isTextFile(att.file)) {
+        // テキスト系ファイル: 中身を読み取ってtextパーツとして送信
+        try {
+          const result = await readTextFileWithLimit(att.file);
+          const truncationNote = result.truncated
+            ? ` (元のサイズ: ${result.originalLength.toLocaleString()}文字、一部省略)`
+            : '';
+
+          parts.push({
+            type: 'text',
+            text: [
+              `<attached_file name="${fileName}" size="${(att.file.size / 1024).toFixed(1)}KB"${truncationNote}>`,
+              result.text,
+              `</attached_file>`,
+            ].join('\n'),
+          });
+        } catch (err) {
+          console.error('[FileRead] Failed:', fileName, err);
+          parts.push({
+            type: 'text',
+            text: `[ファイル "${fileName}" の読み取りに失敗しました]`,
+          });
+        }
+      } else if (isPdfFile(att.file)) {
+        // PDF: Geminiが直接処理できるfileパーツで送信
         parts.push({
           type: 'file',
           url: att.dataUrl,
-          mimeType: mimeType || 'application/octet-stream',
+          mimeType: 'application/pdf',
           name: fileName,
+        });
+      } else {
+        // その他のバイナリファイル: サポート外であることを明示
+        parts.push({
+          type: 'text',
+          text: `[ファイル "${fileName}" (${att.file.type || '不明な形式'}) はテキストとして読み取れないため、内容を表示できません]`,
         });
       }
     }
+
+    // partsが空の場合（content空 + ファイル処理失敗）は送信しない
+    if (parts.length === 0) return;
 
     // ユーザーメッセージをDBに保存
     if (currentConversation) {
       const userMessage: DBMessage = {
         id: crypto.randomUUID(),
         role: 'user',
-        content,
-        parts: parts as any, // ← partsを保存
+        content, // ユーザーが入力したテキストのみ
+        parts: parts as any,
         createdAt: new Date(),
       };
       await dbAddMessage(currentConversation.id, userMessage);
@@ -217,13 +275,30 @@ export default function Home() {
         setCurrentConversation(conversation);
 
         // メッセージを復元（AI SDK v6形式に変換、partsを優先）
-        const restoredMessages = conversation.messages.map(m => ({
-          id: m.id,
-          role: m.role as 'user' | 'assistant',
-          parts: m.parts && m.parts.length > 0
-            ? m.parts
-            : [{ type: 'text' as const, text: m.content }],
-        }));
+        // GENSPARK 3.10/5.6: 思考ログやソース、ツール結果を正確に復元
+        const restoredMessages = conversation.messages.map(m => {
+          let parts = m.parts || [];
+
+          if (parts.length === 0) {
+            parts = [{ type: 'text', text: m.content }];
+          } else {
+            // シリアライズされたpartsの型を正規化
+            parts = parts.map((part: any) => {
+              // 既存の型を尊重しつつ、型定義に合わせる
+              if (part.type === 'tool-call') return { ...part, type: 'tool-call' };
+              if (part.type === 'tool-result') return { ...part, type: 'tool-result' };
+              if (part.type === 'thinking') return { ...part, type: 'thinking' };
+              if (part.type === 'source') return { ...part, type: 'source' };
+              return part;
+            });
+          }
+
+          return {
+            id: m.id,
+            role: m.role as 'user' | 'assistant',
+            parts: parts as any,
+          };
+        });
 
         // 累積使用量を計算
         const usage = conversation.messages.reduce((acc, m) => ({
@@ -233,10 +308,18 @@ export default function Home() {
         }), { promptTokens: 0, completionTokens: 0, totalTokens: 0 });
         setTotalUsage(usage);
 
+        // 中期記憶（要約）も復元
+        if (conversation.summary) {
+          setMidTermSummary(conversation.summary);
+        } else {
+          setMidTermSummary(null);
+        }
+
         setMessages(restoredMessages as any);
         setMode(conversation.mode);
       }
       setSidebarOpen(false);
+      localStorage.setItem('lastConversationId', id);
     } catch (error) {
       console.error('[Select Conversation] Failed:', error);
     }
@@ -260,10 +343,10 @@ export default function Home() {
     // partsからテキストを抽出
     if (message.parts && Array.isArray(message.parts)) {
       const textParts = message.parts
-        .filter((part): part is { type: 'text'; text: string } =>
+        .filter((part: any): part is { type: 'text'; text: string } =>
           part.type === 'text' && typeof part.text === 'string'
         )
-        .map(part => part.text);
+        .map((part: any) => part.text);
 
       if (textParts.length > 0) {
         return textParts.join('');
@@ -346,9 +429,12 @@ export default function Home() {
           </div>
         </header>
 
+        {/* トークン使用量統計 */}
+        <UsageStats usage={totalUsage} />
+
         {/* チャットウィンドウ */}
         <ChatWindow
-          messages={messages.map(m => ({
+          messages={messages.map((m: any) => ({
             id: m.id,
             role: m.role as 'user' | 'assistant',
             content: getMessageText(m),
@@ -358,8 +444,7 @@ export default function Home() {
           onSelectSuggestion={handleSubmit}
         />
 
-        {/* 思考中インジケータ */}
-        <ThinkingIndicator isThinking={status === 'streaming'} />
+        {/* 思考中インジケータはChatWindow内で管理 */}
 
         {/* エラー表示 */}
         {error && (

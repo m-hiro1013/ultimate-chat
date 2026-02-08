@@ -1,24 +1,14 @@
 /**
- * コンテキスト管理
+ * コンテキスト管理（クライアントサイド用）
  * 短期/中期/長期のコンテキストを統合管理
+ * 
+ * 注意: このファイルはクライアントサイド（ブラウザ）でのみ使用すること。
+ * API Route（サーバーサイド）からは呼び出さないこと。
  */
 
-import { generateObject } from 'ai';
-import { google } from '@ai-sdk/google';
-import { z } from 'zod';
-import { CONTEXT_SUMMARY_PROMPT } from '@/prompts/context-summary';
 import { getConversation, updateConversationSummary } from './db/conversations';
 import { getLongTermMemoryString } from './db/preferences';
 import type { Message, ConversationSummary } from '@/types';
-
-// 会話要約のスキーマ
-const summarySchema = z.object({
-    projectContext: z.string(),
-    decisions: z.array(z.string()),
-    userPreferences: z.array(z.string()),
-    keyInformation: z.array(z.string()),
-    currentState: z.string(),
-});
 
 // 要約が必要になるターン数の閾値
 const SUMMARY_THRESHOLD = 20;
@@ -27,10 +17,7 @@ const SUMMARY_THRESHOLD = 20;
 const SHORT_TERM_TURNS = 20;
 
 /**
- * 会話のコンテキストを統合して取得
- * @param conversationId - 会話ID
- * @param allMessages - 全メッセージ
- * @returns 統合されたコンテキスト
+ * 会話のコンテキストを統合して取得（クライアントサイド）
  */
 export async function getIntegratedContext(
     conversationId: string,
@@ -40,15 +27,10 @@ export async function getIntegratedContext(
     midTermSummary: ConversationSummary | undefined;
     longTermMemory: string;
 }> {
-    // 長期記憶（ユーザー設定）を取得
     const longTermMemory = await getLongTermMemoryString();
-
-    // 会話を取得して中期記憶（要約）を確認
     const conversation = await getConversation(conversationId);
     const midTermSummary = conversation?.summary;
-
-    // 短期記憶（直近のメッセージ）を取得
-    const shortTermMessages = allMessages.slice(-SHORT_TERM_TURNS * 2); // 各ターンは2メッセージ
+    const shortTermMessages = allMessages.slice(-SHORT_TERM_TURNS * 2);
 
     return {
         shortTermMessages,
@@ -58,86 +40,70 @@ export async function getIntegratedContext(
 }
 
 /**
- * 会話が長くなったら要約を生成
- * @param conversationId - 会話ID
- * @param messages - 全メッセージ
+ * 要約が必要かどうかを判定（クライアントサイド）
  */
-export async function checkAndSummarize(
+export function shouldSummarize(messages: Message[], conversationId: string): boolean {
+    const turnCount = messages.filter(m => m.role === 'user').length;
+    return turnCount >= SUMMARY_THRESHOLD;
+}
+
+/**
+ * 要約を生成してDBに保存（クライアントサイド）
+ * APIを呼び出して要約を生成する
+ */
+export async function generateAndSaveSummary(
     conversationId: string,
     messages: Message[]
-): Promise<void> {
-    // ターン数を計算（ユーザーメッセージの数）
-    const turnCount = messages.filter(m => m.role === 'user').length;
-
-    // 閾値未満なら何もしない
-    if (turnCount < SUMMARY_THRESHOLD) {
-        return;
-    }
-
-    // 既存の要約を確認
-    const conversation = await getConversation(conversationId);
-    if (!conversation) return;
-
-    // 前回の要約時点からのターン数を確認
-    const lastSummaryTurn = conversation.summary ?
-        Math.floor(messages.indexOf(messages[0]) / 2) : 0;
-
-    // 10ターンごとに再要約
-    if (turnCount - lastSummaryTurn < 10 && conversation.summary) {
-        return;
-    }
-
-    console.log('[Context Manager] Summarizing conversation...', { turnCount });
-
+): Promise<ConversationSummary | null> {
     try {
-        // 古いメッセージを要約対象にする
         const messagesToSummarize = messages.slice(0, -SHORT_TERM_TURNS * 2);
+        if (messagesToSummarize.length === 0) return null;
 
-        if (messagesToSummarize.length === 0) {
-            return;
-        }
-
-        // 会話履歴を文字列に変換
         const conversationHistory = messagesToSummarize
             .map(m => `${m.role}: ${m.content}`)
             .join('\n\n');
 
-        // 要約を生成
-        const prompt = CONTEXT_SUMMARY_PROMPT.replace('{conversation_history}', conversationHistory);
-
-        const result = await generateObject({
-            model: google('gemini-3-flash-preview'),
-            schema: summarySchema,
-            prompt,
-            providerOptions: {
-                google: {
-                    thinkingConfig: {
-                        thinkingLevel: 'low',
-                    },
-                },
-            },
+        // 要約APIを呼び出す
+        const response = await fetch('/api/summarize', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ conversationHistory }),
         });
 
-        const summary = result.object as ConversationSummary;
+        if (!response.ok) {
+            console.error('[Context Manager] Summary API failed:', response.status);
+            return null;
+        }
 
-        // 要約を保存
+        const summary = await response.json() as ConversationSummary;
         await updateConversationSummary(conversationId, summary);
-
         console.log('[Context Manager] Summary saved:', summary.currentState);
+        return summary;
     } catch (error) {
         console.error('[Context Manager] Summary generation failed:', error);
+        return null;
     }
 }
 
 /**
  * 直近のコンテキストを文字列形式で取得（意図分類用）
- * @param messages - メッセージ配列
- * @param count - 取得するターン数
- * @returns コンテキスト文字列
  */
 export function getRecentContext(messages: Message[], count: number = 5): string {
     const recentMessages = messages.slice(-(count * 2));
     return recentMessages
         .map(m => `${m.role}: ${m.content.slice(0, 200)}`)
         .join('\n');
+}
+
+// 後方互換のためのエクスポート（サーバーサイドからの呼び出しは何もしない）
+export async function checkAndSummarize(
+    _conversationId: string,
+    _messages: any[]
+): Promise<void> {
+    // サーバーサイドから呼ばれた場合は何もしない
+    // （IndexedDBはブラウザ専用のため）
+    if (typeof window === 'undefined') {
+        console.warn('[Context Manager] checkAndSummarize called on server side - skipping');
+        return;
+    }
 }

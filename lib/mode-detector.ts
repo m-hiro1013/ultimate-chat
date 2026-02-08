@@ -9,9 +9,6 @@ import { z } from 'zod';
 import { INTENT_CLASSIFICATION_PROMPT } from '@/prompts/intent-classification';
 import type { IntentClassification, ChatMode, ThinkingLevel } from '@/types';
 
-/**
- * 意図分類のスキーマ（Zodで定義）
- */
 const intentSchema = z.object({
     mode: z.enum(['general', 'research', 'coding']),
     needsSearch: z.boolean(),
@@ -21,22 +18,17 @@ const intentSchema = z.object({
 });
 
 /**
- * ユーザーメッセージの意図を分類する
- * @param userMessage - ユーザーの最新メッセージ
- * @param recentContext - 直近の会話コンテキスト（オプション）
- * @returns 意図分類結果
+ * ユーザーメッセージの意図をAI判定する
  */
 export async function detectIntent(
     userMessage: string,
     recentContext?: string
 ): Promise<IntentClassification> {
     try {
-        // プロンプトを構築
         const prompt = INTENT_CLASSIFICATION_PROMPT
-            .replace('{user_message}', userMessage)
-            .replace('{recent_context}', recentContext || 'なし');
+            .replace('{user_message}', userMessage.slice(0, 1000)) // 長すぎるメッセージを切り詰め
+            .replace('{recent_context}', recentContext?.slice(0, 2000) || 'なし');
 
-        // Gemini 3 Flashで高速に意図分類（thinkingLevel: minimal）
         const result = await generateObject({
             model: google('gemini-3-flash-preview'),
             schema: intentSchema,
@@ -53,8 +45,6 @@ export async function detectIntent(
         return result.object as IntentClassification;
     } catch (error) {
         console.error('[Mode Detection Error]', error);
-
-        // フォールバック: デフォルト設定を返す
         return {
             mode: 'general',
             needsSearch: false,
@@ -67,34 +57,84 @@ export async function detectIntent(
 
 /**
  * メッセージからモードを簡易判定（キーワードベース）
- * generateObjectを呼ばずに高速に判定したい場合に使用
+ * ユーザーの質問テキストのみを入力すること（ファイル内容を含めない）
  */
 export function detectModeQuick(message: string): ChatMode {
     const lowerMessage = message.toLowerCase();
 
+    // URLが含まれている場合はリサーチ寄り
+    const hasUrl = /https?:\/\/\S+/.test(message);
+
     // コーディングモードのキーワード
-    const codingKeywords = [
-        'コード', 'code', '実装', 'implement', '作って', '書いて',
-        'プログラム', 'program', '関数', 'function', 'バグ', 'bug',
-        'エラー', 'error', 'デバッグ', 'debug', 'typescript', 'javascript',
-        'python', 'react', 'next.js', 'api', 'npm', 'pnpm', 'リファクタ',
-        'テスト', 'test', 'ビルド', 'build', 'コンパイル', 'compile',
+    // 注意: 「コード」単体は「このコードを見て」のような分析依頼にも使われるため、
+    //        動詞と組み合わせて判定する
+    const codingPatterns = [
+        /コード.*(書|作|生成|実装)/,
+        /実装して/,
+        /(作って|作成して).*(アプリ|コンポーネント|関数|API|ページ|サイト)/,
+        /バグ.*(修正|直|fix)/,
+        /エラー.*(修正|直|fix|解決)/,
+        /デバッグ/,
+        /リファクタ/,
+        /(テスト|test).*(書|作|追加)/,
+        /npm |pnpm |yarn |pip |cargo /,
+        /import .+ from/,
+        /function |const |let |var |class |interface |type /,
+        /```\w/,  // コードブロックが含まれている
+    ];
+
+    const codingKeywordsExact = [
+        'typescript', 'javascript', 'python', 'react', 'next.js', 'vue',
+        'angular', 'node.js', 'express', 'fastapi', 'django', 'flask',
+        'rust', 'go', 'swift', 'kotlin',
     ];
 
     // リサーチモードのキーワード
-    const researchKeywords = [
-        '調べて', '教えて', '調査', 'research', '最新', 'latest',
-        '比較', 'compare', 'どっちがいい', 'おすすめ', 'recommendation',
-        'ニュース', 'news', '情報', 'information', 'について',
-        '違い', 'difference', 'メリット', 'デメリット', '深掘り',
-        '徹底的', '詳細', 'detail', 'イベント', '天気', '価格',
+    const researchPatterns = [
+        /調べて/,
+        /教えて/,
+        /調査/,
+        /最新.*(情報|動向|ニュース|状況)/,
+        /比較して/,
+        /どっちがいい/,
+        /おすすめ/,
+        /違い.*(は|を|って)/,
+        /メリット|デメリット/,
+        /深掘り/,
+        /徹底的/,
+        /詳しく/,
+        /まとめて/,
+        /^.{0,10}(とは|って何|ってなに)/,  // 「〇〇とは」形式
     ];
 
-    // キーワードマッチング
-    if (codingKeywords.some(kw => lowerMessage.includes(kw))) {
+    const researchKeywordsExact = [
+        'research', 'compare', 'latest', 'news', 'benchmark',
+    ];
+
+    // パターンマッチング（正規表現）
+    if (codingPatterns.some(pattern => pattern.test(lowerMessage))) {
         return 'coding';
     }
-    if (researchKeywords.some(kw => lowerMessage.includes(kw))) {
+
+    // 完全キーワードマッチ（コーディング）
+    // 単にファイル内にキーワードがあるだけでは反応しないよう、
+    // ユーザーの質問テキストにフォーカス
+    const words = lowerMessage.split(/\s+/);
+    if (codingKeywordsExact.some(kw => words.includes(kw))) {
+        return 'coding';
+    }
+
+    // パターンマッチング（リサーチ）
+    if (researchPatterns.some(pattern => pattern.test(lowerMessage))) {
+        return 'research';
+    }
+
+    if (researchKeywordsExact.some(kw => words.includes(kw))) {
+        return 'research';
+    }
+
+    // URLが含まれていればリサーチ寄り
+    if (hasUrl) {
         return 'research';
     }
 
@@ -107,13 +147,58 @@ export function detectModeQuick(message: string): ChatMode {
 export function needsSearchQuick(message: string): boolean {
     const lowerMessage = message.toLowerCase();
 
-    const searchKeywords = [
-        '最新', 'latest', '現在', 'current', '今日', 'today',
-        '調べて', 'search', '検索', 'ニュース', 'news',
-        '2025', '2026', 'いつ', 'when', 'どこ', 'where',
-        'バージョン', 'version', 'リリース', 'release',
-        '誰', 'who', '何', 'what', 'なぜ', 'why', '方法', 'how to',
+    const searchPatterns = [
+        /最新/,
+        /現在/,
+        /今日/,
+        /2025|2026/,
+        /調べて/,
+        /検索/,
+        /ニュース/,
+        /バージョン/,
+        /リリース/,
+        /いつ(から|まで|頃|ごろ)/,
+        /価格|値段|料金/,
+        /天気/,
+        /株価/,
+        /^.{0,5}(誰|何|いつ|どこ|なぜ|どうやって)/,
     ];
 
-    return searchKeywords.some(kw => lowerMessage.includes(kw));
+    return searchPatterns.some(pattern => pattern.test(lowerMessage));
+}
+
+/**
+ * 添付ファイルがある場合のモード調整
+ */
+export function adjustModeForAttachments(
+    detectedMode: ChatMode,
+    hasTextAttachment: boolean,
+    hasImageAttachment: boolean,
+    hasCodeAttachment: boolean,
+): { mode: ChatMode; thinkingLevel: ThinkingLevel } {
+    // コードファイルが添付されていて、質問がコーディング関連ならコーディングモード維持
+    if (hasCodeAttachment && detectedMode === 'coding') {
+        return { mode: 'coding', thinkingLevel: 'high' };
+    }
+
+    // ファイル添付があり、質問がリサーチモードでも、
+    // ファイル分析が主目的の可能性が高いのでgeneralに
+    if ((hasTextAttachment || hasImageAttachment) && detectedMode === 'research') {
+        return { mode: 'general', thinkingLevel: 'medium' };
+    }
+
+    // 画像添付はmediumで十分
+    if (hasImageAttachment && detectedMode === 'general') {
+        return { mode: 'general', thinkingLevel: 'medium' };
+    }
+
+    // テキストファイル添付はmedium〜high
+    if (hasTextAttachment) {
+        return { mode: detectedMode, thinkingLevel: 'medium' };
+    }
+
+    return {
+        mode: detectedMode,
+        thinkingLevel: detectedMode === 'research' ? 'high' : 'medium',
+    };
 }

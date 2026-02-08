@@ -84,7 +84,9 @@ export function Sidebar({
 
     // 会話を日付順にソート (最新が上)
     const sortedConversations = useMemo(() => {
-        return [...conversations].sort((a, b) => b.updatedAt - a.updatedAt);
+        return [...conversations].sort((a, b) =>
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
     }, [conversations]);
 
     // グループ化

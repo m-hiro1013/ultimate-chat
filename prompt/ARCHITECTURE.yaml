@@ -1,68 +1,51 @@
 architecture:
-  version: "1.0.0"
-  description: "Ultimate Chat の論理構成とデータフロー"
+  version: "1.2.0"
+  description: "Ultimate Chat の論理構成とデータフロー（Revitalized Edition）"
 
   core_flow:
-    input: "InputArea.tsx -> useChat (app/page.tsx)"
+    input: "InputArea.tsx -> handleFileUpload -> readTextFileWithLimit (lib/file-utils.ts) -> useChat (app/page.tsx)"
     processing:
-      orchestration: "lib/orchestrator.ts (Intent classification -> Prompt building -> streamText)"
-      intent_detection: "lib/mode-detector.ts (Keyword-based + AI-based with Gemini 3 Flash)"
-      prompt_construction: "lib/prompt-builder.ts (System prompt composition)"
-    output: "MessageParts.tsx (Markdown, Thinking, Source, File/Image rendering)"
+      intent_detection: "lib/mode-detector.ts (AI-based Intent classification excluding attachment content)"
+      orchestration: "lib/orchestrator.ts (Message trimming -> Dynamic prompt building -> tool-aware streamText)"
+      prompt_construction: "lib/prompt-builder.ts (System base + Mode specific + File analysis prompts)"
+    output: "MessageParts.tsx (Markdown rendering + Thinking logs + Source citations + File links)"
 
   data_management:
-    persistence: "Dexie.js (IndexedDB) -> conversation & messages tables"
-    history_restoration: "app/page.tsx (restoring parts-based messages to preserve Thought Signatures)"
-    memory:
-      long_term: "lib/db/preferences.ts (User instructions)"
-      mid_term: "lib/context-manager.ts (Automatic summarization logic)"
+    persistence: "Dexie.js (IndexedDB) -> browser-local storage for conversations and history"
+    memory_strategy:
+      long_term: "lib/db/preferences.ts (User customized instructions)"
+      mid_term: "app/api/summarize/route.ts (Automatic periodic summarization via LLM)"
+      short_term: "lib/orchestrator.ts (Token-aware message history windowing)"
 
-  token_management:
-    tracking: "AI SDK v6 onFinish (usage object) data flow to UsageStats.tsx"
-    costs: "Real-time JPY calculation based on Gemini 3 Flash Preview rates"
+  safety_guards:
+    hallucination_prevention: "prompts/file-analysis.ts (Strict data-first instructions)"
+    error_recovery: "lib/orchestrator.ts (Exponential backoff retry + Graceful tool failure fallback)"
 
-  multimodal_handling:
-    attachments: "Parts-based message structure (Text, Image, File parts)"
-    file_analysis: "Dynamic prompt injection when hasFileAttachment is true"
+  tech_stack:
+    framework: "Next.js 16.1.6 (Turbopack)"
+    llm_integration: "AI SDK v6 (@ai-sdk/google, @ai-sdk/react)"
+    language_safety: "TypeScript 5.x with Strict Null Checks"
+    styling: "Tailwind CSS 4.x"
 
 completed_features:
-  phase1:
-    name: "プロトタイプ構築"
-    status: "done"
-    completed_at: "2026-02-07"
-    features:
-      - id: "F001"
-        name: "会話履歴の永続化"
-        description: "IndexedDBを使用して全メッセージとツール結果を保存"
-        file: "lib/db/conversations.ts"
-        status: "done"
-  phase2:
-    name: "主要機能とGENSPARK準拠対応"
+  revitalization_phase:
+    name: "Ultimate Chat Revitalization"
     status: "done"
     completed_at: "2026-02-08"
     features:
-      - id: "F003"
-        name: "GENSPARK準拠対応"
-        description: "maxTokens: 64k, mediaResolution: High などのプロバイダーパラメータ設定"
-        file: "lib/orchestrator.ts"
-        status: "done"
-      - id: "F004"
-        name: "使用量UI (UsageStats)"
-        description: "セッションごとのトークン使用量とコストの可視化"
-        file: "components/UsageStats.tsx"
-        status: "done"
-      - id: "F005"
-        name: "自動モード判定"
-        description: "キーワードとAI判定を組み合わせたモード（一般/リサーチ/コーディング）の自動選択"
+      - id: "FIX01"
+        name: "高精度ファイル添付処理"
+        description: "テキストファイルの完全な読み取りと Gemini への正確なコンテキスト受け渡し"
+        file: "lib/file-utils.ts"
+      - id: "FIX02"
+        name: "意図分析におけるファイルノイズ除去"
+        description: "モード判定時に巨大なファイル内容を無視し、質問者の意図を正確に抽出"
         file: "lib/mode-detector.ts"
-        status: "done"
-  phase3:
-    name: "UX・アクセシビリティ改善"
-    status: "done"
-    completed_at: "2026-02-08"
-    features:
-      - id: "F008"
-        name: "UX・アクセシビリティ強化"
-        description: "言語設定、IME対応、ストリーミング制御、スクロール保護、日付別履歴、カスタムUI等の一連のUX改善"
-        file: "app/page.tsx, components/Sidebar.tsx, components/InputArea.tsx"
-        status: "done"
+      - id: "FIX03"
+        name: "サーバーサイド DB 依存の排除"
+        description: "API Route から IndexedDB 呼び出しを削除し、クライアントサイド管理へ完全移行"
+        file: "app/api/chat/route.ts, lib/context-manager.ts"
+      - id: "FIX04"
+        name: "AI SDK v6 型安全性の強化"
+        description: "streamText やツール定義における型エラーの体系的解消"
+        file: "lib/orchestrator.ts, lib/tools/deep-research.ts"

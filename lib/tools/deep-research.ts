@@ -11,7 +11,7 @@ import type { ResearchPlan } from '@/types';
  * リサーチ計画立案ツール
  * Geminiがこのツールを呼び出すことで、体系的な調査計画を取得できる
  */
-export const deepResearchTool = tool({
+export const deepResearchTool = (tool as any)({
     description: `
     複雑なリサーチタスクの調査計画を立案します。
     このツールは以下の場合に使用してください：
@@ -24,7 +24,15 @@ export const deepResearchTool = tool({
         aspectsToInvestigate: z.array(z.string()).describe('調査すべき側面のリスト'),
         preferredLanguages: z.array(z.enum(['en', 'ja'])).describe('検索に使用する言語'),
     }),
-    execute: async ({ question, aspectsToInvestigate, preferredLanguages }): Promise<ResearchPlan> => {
+    execute: async ({
+        question,
+        aspectsToInvestigate,
+        preferredLanguages
+    }: {
+        question: string;
+        aspectsToInvestigate: string[];
+        preferredLanguages: ('en' | 'ja')[];
+    }): Promise<ResearchPlan> => {
         // 各側面に対して検索クエリを生成
         const searchQueries = aspectsToInvestigate.flatMap((aspect, index) => {
             return preferredLanguages.map(lang => ({
@@ -52,7 +60,7 @@ export const deepResearchTool = tool({
  * ファイル解析ツール
  * 添付ファイルの詳細分析を行う
  */
-export const analyzeFileTool = tool({
+export const analyzeFileTool = (tool as any)({
     description: `
     添付されたファイルの詳細な分析を行います。
     コード、ログ、設定ファイル、画像などの内容を解析し、
@@ -64,7 +72,11 @@ export const analyzeFileTool = tool({
         fileName: z.string().describe('ファイル名'),
         analysisGoal: z.string().describe('分析の目的・何を調べたいか'),
     }),
-    execute: async ({ fileType, fileName, analysisGoal }) => {
+    execute: async ({ fileType, fileName, analysisGoal }: {
+        fileType: 'code' | 'log' | 'config' | 'image' | 'document' | 'other';
+        fileName: string;
+        analysisGoal: string;
+    }) => {
         // ファイル種類に応じた分析指示を返す
         const analysisInstructions: Record<string, string> = {
             code: `
@@ -126,7 +138,7 @@ export const analyzeFileTool = tool({
  * コード生成補助ツール
  * コード生成時の追加情報を取得
  */
-export const codeGenerationTool = tool({
+export const codeGenerationTool = (tool as any)({
     description: `
     コード生成を補助するための情報を取得します。
     最新のライブラリバージョン確認、ベストプラクティスの参照などに使用します。
@@ -136,7 +148,11 @@ export const codeGenerationTool = tool({
         task: z.string().describe('実装したいタスク'),
         constraints: z.array(z.string()).optional().describe('制約条件'),
     }),
-    execute: async ({ technology, task, constraints }) => {
+    execute: async ({ technology, task, constraints }: {
+        technology: string;
+        task: string;
+        constraints?: string[];
+    }) => {
         return {
             recommendations: [
                 `${technology}の最新のベストプラクティスに従って実装`,

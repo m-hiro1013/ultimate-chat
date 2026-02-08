@@ -35,7 +35,6 @@ export async function POST(req: Request) {
     try {
         const rawBody = await req.json();
 
-        // バリデーション（9.2対応）
         const parseResult = chatRequestSchema.safeParse(rawBody);
         if (!parseResult.success) {
             console.error('[Chat API] Validation failed:', parseResult.error.issues);
@@ -50,64 +49,54 @@ export async function POST(req: Request) {
 
         const {
             messages,
-            conversationId,
             mode,
             thinkingLevel,
             longTermMemory,
             midTermSummary,
         } = parseResult.data;
 
-        console.log('[Chat API] Received request:', {
-            conversationId,
+        console.log('[Chat API] Received:', {
             mode,
             thinkingLevel,
-            messageCount: messages?.length
+            messageCount: messages?.length,
+            hasLongTermMemory: !!longTermMemory,
+            hasMidTermSummary: !!midTermSummary,
         });
 
-        // partsベースのメッセージを保持しつつ、要約用にテキスト抽出
-        // (3.10/5.6: Thought Signatures保持 & 1.4/6.1-6.3: マルチモーダル対応)
+        // メッセージを処理
+        // content にはユーザーの質問テキストのみを入れる（ファイル内容除外）
         const preservedMessages = messages.map((m) => {
             const textParts = m.parts?.filter((p: any) => p.type === 'text') ?? [];
-            const content = textParts.map((p: any) => p.text ?? '').join('');
+            const userQuestionText = textParts
+                .map((p: any) => p.text ?? '')
+                .filter((text: string) => !text.includes('<attached_file'))
+                .join('')
+                .trim();
+
             return {
                 id: m.id,
                 role: m.role as 'user' | 'assistant' | 'system',
-                content,
+                content: userQuestionText,
                 parts: m.parts,
             };
         });
 
-        console.log('[Chat API] Calling orchestrator...');
-
-        // バックグラウンドで要約チェック（レスポンスをブロックしない）
-        if (conversationId) {
-            const simpleMessages = preservedMessages.map(m => ({
-                id: m.id,
-                role: m.role,
-                content: m.content,
-            }));
-            checkAndSummarize(conversationId, simpleMessages).catch(err =>
-                console.error('[Chat API] checkAndSummarize failed:', err)
-            );
-        }
-
-        // オーケストレーション層を呼び出し
+        // オーケストレーション実行
         const result = await orchestrate({
             messages: preservedMessages,
             mode: mode === 'auto' ? undefined : (mode || undefined),
             thinkingLevel: thinkingLevel || undefined,
             longTermMemory,
-            midTermSummary,
+            midTermSummary: midTermSummary || undefined,
             useAutoDetect: !mode || mode === 'auto',
         });
 
-        console.log('[Chat API] Orchestration result:', {
+        console.log('[Chat API] Result:', {
             detectedMode: result.detectedMode,
             detectedThinkingLevel: result.detectedThinkingLevel,
             hasResearchPlan: !!result.researchPlan,
         });
 
-        // AI SDK v6: toUIMessageStreamResponse() を使用
         return result.stream.toUIMessageStreamResponse({
             sendSources: true,
         });

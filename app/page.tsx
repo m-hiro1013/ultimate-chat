@@ -46,6 +46,13 @@ export default function Home() {
   // 初期化フラグ
   const [initialized, setInitialized] = useState(false);
 
+  // トークン使用量の累積
+  const [totalUsage, setTotalUsage] = useState({
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+  });
+
   // useChat hook - AI SDK v6
   const { messages, sendMessage, status, error, setMessages } = useChat({
     transport: new DefaultChatTransport({
@@ -61,10 +68,21 @@ export default function Home() {
           ?.map((part: { type: string; text?: string }) => part.text || '')
           ?.join('') || '';
 
+        // 使用量を加算
+        if (result.usage) {
+          setTotalUsage(prev => ({
+            promptTokens: prev.promptTokens + (result.usage?.promptTokens || 0),
+            completionTokens: prev.completionTokens + (result.usage?.completionTokens || 0),
+            totalTokens: prev.totalTokens + (result.usage?.totalTokens || 0),
+          }));
+        }
+
         await dbAddMessage(currentConversation.id, {
           id: message.id,
           role: 'assistant',
           content: textContent,
+          parts: message.parts as any, // ← partsをそのまま保存: GENSPARK 3.10/5.6 準拠
+          usage: result.usage, // 使用量も保存
           createdAt: new Date(),
         });
       }
@@ -141,29 +159,65 @@ export default function Home() {
   const handleSubmit = useCallback(async (content: string, attachments: { file: File; dataUrl: string }[] = []) => {
     if (!content.trim() && attachments.length === 0) return;
 
-    // ユーザーメッセージをDBに保存 (テキストのみ)
+    // partsを構築してマルチモーダル対応
+    const parts: any[] = [{ type: 'text', text: content }];
+
+    // 添付ファイルを追加: GENSPARK 6.6 準拠
+    for (const att of attachments) {
+      const mimeType = att.file.type;
+      const fileName = att.file.name;
+
+      if (mimeType.startsWith('image/')) {
+        parts.push({
+          type: 'file',
+          data: att.dataUrl,
+          mediaType: mimeType,
+        });
+      } else if (mimeType === 'application/pdf') {
+        parts.push({
+          type: 'file',
+          data: att.dataUrl,
+          mediaType: mimeType,
+        });
+      } else if (
+        mimeType.startsWith('text/') ||
+        /\.(js|ts|tsx|jsx|py|json|md|txt|csv|yaml|yml|toml|xml|html|css|sql|sh|bash)$/i.test(fileName)
+      ) {
+        // テキスト/コード: テキスト内容を抽出してテキストパーツとして送信
+        try {
+          const base64Content = att.dataUrl.split(',')[1];
+          const textContent = atob(base64Content);
+          parts.push({
+            type: 'text',
+            text: `\n\n---\n📄 添付ファイル: ${fileName}\n\`\`\`\n${textContent}\n\`\`\`\n---\n`,
+          });
+        } catch {
+          parts.push({
+            type: 'file',
+            data: att.dataUrl,
+            mediaType: mimeType || 'application/octet-stream',
+          });
+        }
+      } else {
+        parts.push({
+          type: 'file',
+          data: att.dataUrl,
+          mediaType: mimeType || 'application/octet-stream',
+        });
+      }
+    }
+
+    // ユーザーメッセージをDBに保存
     if (currentConversation) {
       const userMessage: DBMessage = {
         id: crypto.randomUUID(),
         role: 'user',
         content,
+        parts: parts as any, // ← partsを保存
         createdAt: new Date(),
       };
       await dbAddMessage(currentConversation.id, userMessage);
     }
-
-    // AI SDK v6: sendMessage関数でメッセージを送信
-    // partsを構築してマルチモーダル対応
-    const parts: any[] = [{ type: 'text', text: content }];
-
-    // 添付ファイルを追加
-    attachments.forEach(att => {
-      parts.push({
-        type: 'file',
-        data: att.dataUrl,
-        mediaType: att.file.type,
-      });
-    });
 
     sendMessage({ parts });
   }, [currentConversation, sendMessage]);
@@ -175,12 +229,23 @@ export default function Home() {
       if (conversation) {
         setCurrentConversation(conversation);
 
-        // メッセージを復元（AI SDK v6形式に変換）
+        // メッセージを復元（AI SDK v6形式に変換、partsを優先）
         const restoredMessages = conversation.messages.map(m => ({
           id: m.id,
           role: m.role as 'user' | 'assistant',
-          parts: [{ type: 'text' as const, text: m.content }],
+          parts: m.parts && m.parts.length > 0
+            ? m.parts
+            : [{ type: 'text' as const, text: m.content }],
         }));
+
+        // 累積使用量を計算
+        const usage = conversation.messages.reduce((acc, m) => ({
+          promptTokens: acc.promptTokens + (m.usage?.promptTokens || 0),
+          completionTokens: acc.completionTokens + (m.usage?.completionTokens || 0),
+          totalTokens: acc.totalTokens + (m.usage?.totalTokens || 0),
+        }), { promptTokens: 0, completionTokens: 0, totalTokens: 0 });
+        setTotalUsage(usage);
+
         setMessages(restoredMessages as any);
         setMode(conversation.mode);
       }

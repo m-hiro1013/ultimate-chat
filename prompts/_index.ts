@@ -97,9 +97,11 @@ export function getPrompt(id: keyof typeof PROMPT_REGISTRY): string {
 
 /** モード名からモードプロンプトを取得 */
 export const MODE_PROMPTS = {
+    auto: MODE_GENERAL_PROMPT, // 自動モード時はベースとして一般プロンプトを使用（後で動的に詳細注入）
     general: MODE_GENERAL_PROMPT,
     research: MODE_RESEARCH_PROMPT,
     coding: MODE_CODING_PROMPT,
 } as const;
 
-export type ChatMode = keyof typeof MODE_PROMPTS;
+import type { ChatMode } from '@/types';
+export { ChatMode };

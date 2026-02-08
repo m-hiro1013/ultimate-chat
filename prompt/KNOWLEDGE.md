@@ -76,3 +76,14 @@ const { messages, sendMessage, status } = useChat({
 const parts = [{ type: 'text', text: content }];
 sendMessage({ parts });
 ```
+### 2026-02-08 (GENSPARK準拠と使用量UI)
+
+- **Learnings (+3)**:
+    - AI SDK の `onFinish` で返却される `usage` オブジェクトを累積することで、セッション全体のトークンコストをリアルタイムに算出可能。
+    - Multimodal (Gemini) において、過去のメッセージ履歴を復元する際は `content` (string) だけでなく `parts` (array) をそのまま渡すことが極めて重要。Thought Signature が含まれる場合、単なる文字列復元だと不整合で 400 エラーになる。
+    - `mediaResolution` パラメータを添付ファイルの有無に応じて `MEDIA_RESOLUTION_HIGH` に切り替えることで、GENSPARKの要件を満たしつつトークン効率を最適化できる。
+    - ファイル解析プロンプトはメッセージの「直前」に配置することで、AIの理解度が向上する。
+
+- **Pain Points (+2)**:
+    - `react-markdown` で `parts` を直接扱う場合、テキストパーツだけを抽出して結合するロジックが必要（以前は content のみで良かったが、parts ベースに移行したため）。
+    - IndexedDB に `parts` を保存する場合、ファイルデータ (base64) が巨大化するため、ストレージ容量に配慮が必要（現在はそのまま保存しているが、将来的に URL 参照等への移行検討余地あり）。

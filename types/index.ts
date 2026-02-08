@@ -4,7 +4,7 @@
  */
 
 // チャットモードの型
-export type ChatMode = 'general' | 'research' | 'coding';
+export type ChatMode = 'auto' | 'general' | 'research' | 'coding';
 
 // 思考レベルの型
 export type ThinkingLevel = 'minimal' | 'low' | 'medium' | 'high';
@@ -89,6 +89,15 @@ export interface Conversation {
 }
 
 /**
+ * トークン使用量
+ */
+export interface TokenUsage {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+}
+
+/**
  * メッセージデータ
  * AI SDK UIMessageとの互換性を維持
  */
@@ -97,6 +106,7 @@ export interface Message {
     role: 'user' | 'assistant' | 'system';
     content: string;
     parts?: MessagePart[];
+    usage?: TokenUsage;
     createdAt?: Date;
 }
 

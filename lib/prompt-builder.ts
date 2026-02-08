@@ -17,8 +17,11 @@ export function buildSystemPrompt(params: {
     mode: ChatMode;
     longTermMemory?: string;
     midTermSummary?: ConversationSummary | null;
+    hasFileAttachment?: boolean; // ← 追加: GENSPARK 4.8 準拠
 }): string {
-    const { mode, longTermMemory, midTermSummary } = params;
+    const { mode, longTermMemory, midTermSummary, hasFileAttachment } = params;
+
+    import { FILE_ANALYSIS_PROMPT } from '@/prompts/file-analysis';
 
     // 基本パーツを組み立て
     const parts: string[] = [
@@ -27,6 +30,11 @@ export function buildSystemPrompt(params: {
         TOOL_USAGE_PROMPT,
         MODE_PROMPTS[mode],
     ];
+
+    // ファイル添付がある場合、ファイル解析プロンプトを追加: GENSPARK 4.8 準拠
+    if (hasFileAttachment) {
+        parts.push(FILE_ANALYSIS_PROMPT);
+    }
 
     // 長期記憶（ユーザー設定）があれば追加
     if (longTermMemory) {

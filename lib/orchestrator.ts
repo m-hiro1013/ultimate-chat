@@ -188,6 +188,7 @@ ${researchPlan.fallbackStrategy}
                 system: systemPrompt,
                 messages: messages as any,
                 maxSteps: detectedMode === 'research' ? 10 : 3, // AI SDK v6 replacement for manual step management
+                maxTokens: 65536, // ← 追加: GENSPARK 1.3 準拠
                 temperature: 1.0,
                 tools: {
                     google_search: google.tools.googleSearch({}),
@@ -198,6 +199,10 @@ ${researchPlan.fallbackStrategy}
                         thinkingConfig: {
                             thinkingLevel: geminiThinkingLevel,
                         },
+                        // ファイル添付がある場合は高解像度に設定: GENSPARK 6.7 準拠
+                        ...(messages.some(m => m.parts?.some((p: any) => p.type === 'file' || p.type === 'image')) && {
+                            mediaResolution: 'MEDIA_RESOLUTION_HIGH',
+                        }),
                     } satisfies GoogleGenerativeAIProviderOptions,
                 },
                 onStepFinish({ finishReason, usage }) {
